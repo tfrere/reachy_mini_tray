@@ -107,3 +107,45 @@ pub fn reset_bootstrap() -> std::io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_dir_is_some_on_supported_platforms() {
+        // We can only really assert the call is wired correctly; the
+        // actual path depends on the host's HOME / LOCALAPPDATA, which
+        // CI guarantees but local devs may run with quirky setups.
+        let dir = data_dir();
+        assert!(
+            dir.is_some() || std::env::var_os("HOME").is_none(),
+            "expected data_dir() to resolve when HOME/LOCALAPPDATA is set",
+        );
+    }
+
+    #[test]
+    fn venv_python_path_is_inside_data_dir() {
+        if let (Some(root), Some(py)) = (data_dir(), venv_python_path()) {
+            assert!(py.starts_with(&root), "venv path must be under data dir");
+            assert!(
+                py.components()
+                    .any(|c| c.as_os_str() == std::ffi::OsStr::new(VENV_NAME)),
+                "venv path must include the {} directory",
+                VENV_NAME,
+            );
+        }
+    }
+
+    #[test]
+    fn venv_python_filename_is_platform_specific() {
+        if let Some(py) = venv_python_path() {
+            let last = py.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if cfg!(target_os = "windows") {
+                assert_eq!(last, "python.exe");
+            } else {
+                assert_eq!(last, "python3");
+            }
+        }
+    }
+}

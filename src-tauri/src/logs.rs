@@ -210,3 +210,49 @@ fn iso_short(ts_ms: u64) -> String {
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_line_level_recognises_python_brackets() {
+        assert_eq!(parse_line_level("2024-01-01 [ERROR] boom", "INFO"), "ERROR");
+        assert_eq!(parse_line_level("[WARNING] heads up", "INFO"), "WARN");
+        assert_eq!(parse_line_level("[CRITICAL] oops", "INFO"), "ERROR");
+    }
+
+    #[test]
+    fn parse_line_level_recognises_uvicorn_colon() {
+        assert_eq!(parse_line_level("INFO: starting", "WARN"), "INFO");
+        assert_eq!(parse_line_level("ERROR: bind failed", "INFO"), "ERROR");
+        assert_eq!(parse_line_level("WARNING: deprecated", "INFO"), "WARN");
+    }
+
+    #[test]
+    fn parse_line_level_falls_back_to_default() {
+        assert_eq!(parse_line_level("plain stdout text", "INFO"), "INFO");
+        assert_eq!(parse_line_level("plain stderr text", "WARN"), "WARN");
+    }
+
+    #[test]
+    fn parse_line_level_priority_is_critical_first() {
+        // "[CRITICAL] foo INFO bar" must report CRITICAL/ERROR, not INFO,
+        // because critical patterns are checked before info ones.
+        assert_eq!(parse_line_level("[CRITICAL] INFO bar", "INFO"), "ERROR");
+    }
+
+    #[test]
+    fn normalize_level_canonicalises_synonyms() {
+        assert_eq!(normalize_level("err"), "ERROR");
+        assert_eq!(normalize_level(" warning "), "WARN");
+        assert_eq!(normalize_level("DEBUG"), "DEBUG");
+        assert_eq!(normalize_level("nonsense"), "INFO");
+    }
+
+    #[test]
+    fn iso_short_pads_components() {
+        assert_eq!(iso_short(0), "00:00:00");
+        assert_eq!(iso_short(3_661_000), "01:01:01");
+    }
+}

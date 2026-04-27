@@ -21,6 +21,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+use crate::api::{local_client, DAEMON_BASE_URL};
 use crate::commands::FIRST_RUN_WINDOW_LABEL;
 use crate::logs;
 use crate::state::{
@@ -33,10 +34,10 @@ use crate::tray_menu::refresh_status;
 /// backend and the IO layer are all initialised. Returns 503 / connection
 /// refused before that.
 ///
-/// Note the `/api` prefix: the daemon mounts every router under `/api/*`
-/// (see `reachy_mini.daemon.app.main`). Hitting `/daemon/status` directly
-/// returns 404 even when the daemon is live.
-const HEALTHCHECK_URL: &str = "http://127.0.0.1:8000/api/daemon/status";
+/// The daemon mounts every router under `/api/*` (see
+/// `reachy_mini.daemon.app.main`); hitting `/daemon/status` without the
+/// prefix returns 404 even when the daemon is live.
+const HEALTHCHECK_PATH: &str = "/daemon/status";
 
 /// Poll cadence while the daemon is in `Starting` state.
 const HEALTHCHECK_INTERVAL: Duration = Duration::from_millis(500);
@@ -397,16 +398,14 @@ pub(crate) fn derive_bootstrap_event(line: &str) -> BootstrapProgress {
 /// don't want to share a tokio runtime with the sidecar event loop.
 fn start_healthcheck(app: AppHandle, generation: u64) {
     std::thread::spawn(move || {
-        let client = match reqwest::blocking::Client::builder()
-            .timeout(HEALTHCHECK_HTTP_TIMEOUT)
-            .build()
-        {
+        let client = match local_client(HEALTHCHECK_HTTP_TIMEOUT) {
             Ok(c) => c,
             Err(e) => {
                 log::error!("failed to build healthcheck client: {}", e);
                 return;
             }
         };
+        let url = format!("{}{}", DAEMON_BASE_URL, HEALTHCHECK_PATH);
         let started = Instant::now();
 
         loop {
@@ -432,7 +431,7 @@ fn start_healthcheck(app: AppHandle, generation: u64) {
                 return;
             }
 
-            match client.get(HEALTHCHECK_URL).send() {
+            match client.get(&url).send() {
                 Ok(resp) if resp.status().is_success() => {
                     let elapsed = started.elapsed();
                     if elapsed < HEALTHCHECK_GRACE {
@@ -672,4 +671,75 @@ pub(crate) fn stop_daemon(app: &AppHandle) {
     kill_daemon(&app_state);
     set_daemon_state(&app_state, DaemonState::Idle);
     refresh_status(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_daemon_args_usb_has_no_mockup() {
+        let args = build_daemon_args(Mode::Usb);
+        assert!(args.iter().any(|a| a == "--desktop-app-daemon"));
+        assert!(args.iter().any(|a| a == "--no-wake-up-on-start"));
+        assert!(!args.iter().any(|a| a == "--mockup-sim"));
+        // The trampoline interprets args[0] as the python interpreter path.
+        let py = &args[0];
+        if cfg!(target_os = "windows") {
+            assert!(py.ends_with("python.exe"));
+        } else {
+            assert!(py.ends_with("python3"));
+        }
+        assert_eq!(args[1], "-m");
+        assert_eq!(args[2], "reachy_mini.daemon.app.main");
+    }
+
+    #[test]
+    fn build_daemon_args_simulation_adds_mockup() {
+        let args = build_daemon_args(Mode::Simulation);
+        assert!(args.iter().any(|a| a == "--mockup-sim"));
+    }
+
+    #[test]
+    fn derive_bootstrap_event_anchors_milestones() {
+        let p = derive_bootstrap_event("[bootstrap] Downloading uv 0.4.0");
+        assert_eq!(p.percent, Some(12));
+        assert!(p.label.is_some());
+
+        let p = derive_bootstrap_event("Setup complete!");
+        assert_eq!(p.percent, Some(98));
+
+        let p = derive_bootstrap_event("Pre-warming complete (apps_venv)");
+        assert_eq!(p.percent, Some(95));
+    }
+
+    #[test]
+    fn derive_bootstrap_event_indeterminate_for_gstreamer_scan() {
+        let p = derive_bootstrap_event("Scanning plugin registry, please wait...");
+        assert_eq!(p.percent, Some(PROGRESS_INDETERMINATE));
+    }
+
+    #[test]
+    fn derive_bootstrap_event_unknown_line_yields_default() {
+        let p = derive_bootstrap_event("totally generic uvicorn output");
+        assert!(p.percent.is_none());
+        assert!(p.label.is_none());
+        assert!(p.line.is_none());
+    }
+
+    #[test]
+    fn derive_bootstrap_event_runtime_hints_have_label_no_percent() {
+        let p = derive_bootstrap_event("INFO:reachy_mini.daemon: Starting Reachy Mini daemon");
+        assert!(p.percent.is_none());
+        assert!(p.label.is_some());
+    }
+
+    #[test]
+    fn derive_bootstrap_event_specificity_order() {
+        // "Setup complete!" must beat the bare "starting daemon" runtime
+        // hint when both literally appear (defensive against a future
+        // log-format change that could put them on the same line).
+        let p = derive_bootstrap_event("Setup complete! Starting Reachy Mini daemon now");
+        assert_eq!(p.percent, Some(98));
+    }
 }

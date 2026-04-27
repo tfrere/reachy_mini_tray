@@ -74,7 +74,14 @@ jobs:
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
       - name: cargo clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: cargo test
+        # Pure-logic unit tests: log-level parsing, bootstrap-progress
+        # heuristics, daemon-arg builder, path layout, HF status decode.
+        # No daemon runtime needed - the integration test lives in
+        # daemon-smoke.yml.
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib

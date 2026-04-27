@@ -24,12 +24,14 @@
 //! - [`tray_menu`]: dynamic menu construction + `refresh_status` entry point.
 //! - [`commands`]: webview window helpers and Tauri IPC commands.
 //! - [`hf_auth`]: Hugging Face OAuth orchestrator + status poller.
+//! - [`api`]: daemon base URL + shared `reqwest` client factory.
 //! - [`logs`]: in-memory ring-buffer logger.
 //! - [`paths`]: data-dir layout (shared with `reachy_mini_desktop_app`).
 //!
 //! Explicitly out of scope: auto-update, autostart-at-login, system
 //! sleep/wake reconciliation, Windows / Linux code-signing pipelines.
 
+mod api;
 mod commands;
 mod daemon;
 mod hf_auth;

@@ -26,12 +26,20 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
+use crate::api::{local_client, DAEMON_BASE_URL};
 use crate::state::{current_daemon_state, AppState, DaemonState};
 use crate::tray_menu::request_menu_refresh;
 
-const API_BASE: &str = "http://127.0.0.1:8000/api/hf-auth";
+/// Sub-prefix appended to [`crate::api::DAEMON_BASE_URL`] for every HF
+/// route. Must match the FastAPI router prefix in
+/// `reachy_mini.daemon.app.main`.
+pub(crate) const HF_AUTH_PATH: &str = "/hf-auth";
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(3);
+
+fn hf_url(suffix: &str) -> String {
+    format!("{}{}{}", DAEMON_BASE_URL, HF_AUTH_PATH, suffix)
+}
 
 /// Cadence at which we poll `/status` and `/relay-status` while the daemon
 /// is `Running`.
@@ -175,10 +183,7 @@ impl AuthStatusStore {
 // ============================================================================
 
 fn http_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
-        .timeout(HTTP_TIMEOUT)
-        .build()
-        .map_err(|e| format!("reqwest build: {}", e))
+    local_client(HTTP_TIMEOUT)
 }
 
 #[derive(Deserialize)]
@@ -204,7 +209,7 @@ struct OauthStatusResponse {
 }
 
 fn fetch_auth_status(client: &reqwest::blocking::Client) -> Result<AuthStatus, String> {
-    let url = format!("{}/status", API_BASE);
+    let url = hf_url("/status");
     let resp = client
         .get(&url)
         .send()
@@ -217,7 +222,7 @@ fn fetch_auth_status(client: &reqwest::blocking::Client) -> Result<AuthStatus, S
 }
 
 fn fetch_relay_status(client: &reqwest::blocking::Client) -> Result<RelayStatus, String> {
-    let url = format!("{}/relay-status", API_BASE);
+    let url = hf_url("/relay-status");
     let resp = client
         .get(&url)
         .send()
@@ -253,7 +258,7 @@ struct CentralRobotStatus {
 fn fetch_central_robot_status(
     client: &reqwest::blocking::Client,
 ) -> Result<CentralRobotStatus, String> {
-    let url = format!("{}/central-robot-status", API_BASE);
+    let url = hf_url("/central-robot-status");
     let resp = client
         .get(&url)
         .send()
@@ -343,7 +348,7 @@ fn oauth_flow_blocking(app: &AppHandle) -> Result<String, String> {
     // pass `use_localhost=true`: the daemon's redirect URI is
     // `http://localhost:8000/api/hf-auth/oauth/callback`, which is what
     // we open in the user's browser - no proxy required.
-    let url = format!("{}/oauth/start?use_localhost=true", API_BASE);
+    let url = hf_url("/oauth/start?use_localhost=true");
     let resp = client
         .get(&url)
         .send()
@@ -387,12 +392,12 @@ fn oauth_flow_blocking(app: &AppHandle) -> Result<String, String> {
     // early if the daemon leaves `Running` (Stop / Quit / crash); in that
     // case the callback can never land anyway.
     let started = Instant::now();
-    let status_url = format!("{}/oauth/status/{}", API_BASE, session_id);
+    let status_url = hf_url(&format!("/oauth/status/{}", session_id));
     loop {
         let app_state = app.state::<AppState>();
         if !matches!(current_daemon_state(&app_state), DaemonState::Running) {
             let _ = client
-                .delete(format!("{}/oauth/session/{}", API_BASE, session_id))
+                .delete(hf_url(&format!("/oauth/session/{}", session_id)))
                 .send();
             return Err("daemon stopped during OAuth flow".to_string());
         }
@@ -401,7 +406,7 @@ fn oauth_flow_blocking(app: &AppHandle) -> Result<String, String> {
             // Best-effort cleanup so the daemon's session table doesn't
             // accumulate dead entries.
             let _ = client
-                .delete(format!("{}/oauth/session/{}", API_BASE, session_id))
+                .delete(hf_url(&format!("/oauth/session/{}", session_id)))
                 .send();
             return Err("OAuth poll timed out (10 min)".to_string());
         }
@@ -448,7 +453,7 @@ pub fn sign_out(app: &AppHandle) {
                 return;
             }
         };
-        let url = format!("{}/token", API_BASE);
+        let url = hf_url("/token");
         match client.delete(&url).send() {
             Ok(resp) if resp.status().is_success() => {
                 log::info!("sign-out OK");
@@ -483,7 +488,7 @@ pub fn refresh_relay(app: &AppHandle) {
                 return;
             }
         };
-        let url = format!("{}/refresh-relay", API_BASE);
+        let url = hf_url("/refresh-relay");
         match client.post(&url).send() {
             Ok(resp) if resp.status().is_success() => {
                 log::info!("refresh-relay requested");
@@ -678,4 +683,81 @@ pub fn start_status_poller(app: AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hf_url_concatenates_base_prefix_and_suffix() {
+        assert_eq!(
+            hf_url("/status"),
+            "http://127.0.0.1:8000/api/hf-auth/status"
+        );
+        assert_eq!(
+            hf_url("/oauth/start?use_localhost=true"),
+            "http://127.0.0.1:8000/api/hf-auth/oauth/start?use_localhost=true"
+        );
+    }
+
+    #[test]
+    fn auth_status_decodes_full_payload() {
+        let raw = r#"{"is_logged_in": true, "username": "tfrere"}"#;
+        let s: AuthStatus = serde_json::from_str(raw).expect("decode");
+        assert!(s.is_logged_in);
+        assert_eq!(s.username.as_deref(), Some("tfrere"));
+    }
+
+    #[test]
+    fn auth_status_decodes_empty_payload_as_logged_out() {
+        let s: AuthStatus = serde_json::from_str("{}").expect("decode");
+        assert!(!s.is_logged_in);
+        assert!(s.username.is_none());
+    }
+
+    #[test]
+    fn relay_status_decodes_connecting() {
+        let raw = r#"{"state": "connecting", "is_connected": false, "message": "in progress"}"#;
+        let r: RelayStatus = serde_json::from_str(raw).expect("decode");
+        assert_eq!(r.state, "connecting");
+        assert!(!r.is_connected);
+        assert_eq!(r.message.as_deref(), Some("in progress"));
+    }
+
+    #[test]
+    fn relay_status_decodes_minimal_payload() {
+        let r: RelayStatus = serde_json::from_str("{}").expect("decode");
+        assert!(r.state.is_empty());
+        assert!(!r.is_connected);
+        assert!(r.message.is_none());
+    }
+
+    #[test]
+    fn auth_snapshot_default_is_logged_out_no_oauth() {
+        let snap = AuthSnapshot::default();
+        assert!(!snap.auth.is_logged_in);
+        assert!(snap.relay.is_none());
+        assert!(!snap.oauth_in_flight);
+    }
+
+    #[test]
+    fn auth_status_store_oauth_acquire_is_exclusive() {
+        let store = AuthStatusStore::new();
+        assert!(store.try_acquire_oauth());
+        assert!(
+            !store.try_acquire_oauth(),
+            "second acquire must fail while one is in flight"
+        );
+        store.release_oauth();
+        assert!(store.try_acquire_oauth(), "release should re-allow acquire");
+    }
+
+    #[test]
+    fn auth_status_store_burst_window_starts_closed() {
+        let store = AuthStatusStore::new();
+        assert!(!store.in_burst_window());
+        store.trigger_burst();
+        assert!(store.in_burst_window());
+    }
 }
