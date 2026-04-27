@@ -1,22 +1,22 @@
-// HuggingFace account integration.
-//
-// All real OAuth work lives in the Python daemon
-// (`reachy_mini.daemon.app.routers.hf_auth`). This module is just a thin
-// orchestrator:
-//
-//   - polls the daemon for `/status` + `/relay-status` while the daemon is
-//     Running, so the tray menu always shows accurate "Signed in as @user"
-//     + "Remote access" labels;
-//   - drives the OAuth dance by calling `/oauth/start`, opening the
-//     returned `auth_url` in the system browser (the daemon owns the
-//     `localhost:8000/api/hf-auth/oauth/callback` redirect), and polling
-//     `/oauth/status/{sid}` until the user finishes (or times out);
-//   - exposes Sign Out (DELETE `/api/hf-auth/token`) and Reconnect to HF
-//     central (POST `/api/hf-auth/refresh-relay`) wrappers.
-//
-// We do NOT store any token here. The daemon writes/reads
-// `~/.cache/huggingface/token` itself; the tray only ever sees usernames
-// and connection states.
+//! Hugging Face account integration.
+//!
+//! All real OAuth work lives in the Python daemon
+//! (`reachy_mini.daemon.app.routers.hf_auth`). This module is just a thin
+//! orchestrator:
+//!
+//! - polls the daemon for `/status` + `/relay-status` while the daemon is
+//!   Running, so the tray menu always shows accurate "Signed in as @user"
+//!   + "Remote access" labels;
+//! - drives the OAuth dance by calling `/oauth/start`, opening the
+//!   returned `auth_url` in the system browser (the daemon owns the
+//!   `localhost:8000/api/hf-auth/oauth/callback` redirect), and polling
+//!   `/oauth/status/{sid}` until the user finishes (or times out);
+//! - exposes Sign Out (DELETE `/api/hf-auth/token`) and Reconnect to HF
+//!   central (POST `/api/hf-auth/refresh-relay`) wrappers.
+//!
+//! No token is ever stored on the tray side. The daemon writes/reads
+//! `~/.cache/huggingface/token` itself; the tray only ever sees usernames
+//! and connection states.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -67,8 +67,8 @@ const OAUTH_POLL_MAX: Duration = Duration::from_secs(600);
 // ============================================================================
 
 /// Daemon-reported authentication status. Cached in `AuthStatusStore` and
-/// consulted by `lib::update_menu_state` to render the account submenu
-/// labels live.
+/// consumed by the tray menu builder (`tray_menu::refresh_status`) to render
+/// the account submenu labels live.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AuthStatus {
     #[serde(default)]
@@ -631,7 +631,7 @@ pub fn start_status_poller(app: AppHandle) {
                         effective_auth.is_logged_in = true;
                         effective_auth.username = sticky_username.clone();
                         log::debug!(
-                            "auth poller: ignoring transient logged_out=false (relay_connected={}, ticks={}/{})",
+                            "auth poller: keeping sticky login (raw whoami=false, likely 429; relay_connected={}, ticks={}/{})",
                             relay_connected,
                             consecutive_logged_out,
                             LOGOUT_CONFIRM_TICKS

@@ -1,22 +1,23 @@
-// Filesystem paths for app data + first-run detection.
-//
-// The data directory is intentionally aligned with `reachy_mini_desktop_app`
-// (`com.pollen-robotics.reachy-mini`, *without* the `-daemon` suffix) so:
-//
-//   - users migrating from the desktop app can reuse the existing `.venv`
-//     and skip a full ~3 minute bootstrap on first launch of this tray app;
-//   - `uv-trampoline` (the sidecar shipped in MVP) finds the same layout it
-//     was designed for, without recompilation.
-//
-// The bundle identifier (`com.pollen-robotics.reachy-mini-daemon`) is kept
-// distinct in tauri.conf.json so the two apps remain independently signed
-// processes from macOS' point of view.
-//
-// "Bootstrap done" is detected by the presence of `.venv/bin/python3`
-// (resp. `.venv\Scripts\python.exe` on Windows). This matches `uv_wrapper::
-// venv_exists()` in the desktop app and is more robust than a sentinel
-// file: a partial bootstrap (interrupted by quit, crash, power loss) leaves
-// no Python binary, so the next launch restarts setup automatically.
+//! Filesystem paths for app data + first-run detection.
+//!
+//! The data directory is intentionally aligned with `reachy_mini_desktop_app`
+//! (`com.pollen-robotics.reachy-mini`, *without* the `-daemon` suffix) so:
+//!
+//! - users migrating from the desktop app can reuse the existing `.venv`
+//!   and skip a full ~3 minute bootstrap on first launch of this tray app;
+//! - `uv-trampoline` (the sidecar shipped in MVP) finds the same layout it
+//!   was designed for, without recompilation.
+//!
+//! The bundle identifier (`com.pollen-robotics.reachy-mini-daemon`) is kept
+//! distinct in `tauri.conf.json` so the two apps remain independently signed
+//! processes from macOS' point of view.
+//!
+//! "Bootstrap done" is detected by the presence of `.venv/bin/python3`
+//! (resp. `.venv\Scripts\python.exe` on Windows). This matches
+//! `uv_wrapper::venv_exists()` in the desktop app and is more robust than a
+//! sentinel file: a partial bootstrap (interrupted by quit, crash, power
+//! loss) leaves no Python binary, so the next launch restarts setup
+//! automatically.
 
 use std::path::PathBuf;
 

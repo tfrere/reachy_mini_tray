@@ -13,7 +13,9 @@
     "build:sidecar:main": "bash ./scripts/build-sidecar.sh main",
     "build:sidecar:mobile-umbrella": "bash ./scripts/build-sidecar.sh integration/mobile-app-daemon",
     "build:sidecar:branch": "bash ./scripts/build-sidecar.sh",
-    "test:daemon-bootstrap": "bash ./scripts/test/test-daemon-bootstrap.sh"
+    "build:sidecar:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/build-sidecar.ps1",
+    "test:daemon-bootstrap": "bash ./scripts/test/test-daemon-bootstrap.sh",
+    "test:daemon-bootstrap:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/test/test-daemon-bootstrap.ps1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "=2.10.1"

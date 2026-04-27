@@ -1,12 +1,16 @@
-// In-memory ring-buffer logger.
-//
-// - Implements `log::Log` so every `log::info!` / `warn!` / `error!` call
-//   from our crate is captured.
-// - Keeps the last `MAX_LOG_LINES` entries in a process-wide ring buffer.
-// - After the Tauri app is built, `bind_app_handle()` lets the logger emit a
-//   `log:append` event so live log windows can append in real time.
-// - On the side, every entry is also printed to stderr so `npm run tauri dev`
-//   still shows logs in the terminal.
+//! In-memory ring-buffer logger and external-line ingestion helpers.
+//!
+//! - Implements `log::Log` so every `log::info!` / `warn!` / `error!` call
+//!   from our crate is captured.
+//! - Keeps the last `MAX_LOG_LINES` entries in a process-wide ring buffer
+//!   exposed via `LogStore` (state-managed by Tauri).
+//! - After the Tauri app is built, `bind_app_handle()` lets the logger emit
+//!   a `log:append` event so the in-app logs window can append in real time.
+//! - `push_external` ingests free-form lines from spawned children (the
+//!   `uv-trampoline` sidecar mostly), with a heuristic level extractor
+//!   (`parse_line_level`) that recognises Python's `logging` defaults.
+//! - Every entry is also mirrored to stderr so `npm run tauri dev` still
+//!   shows logs in the terminal.
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};

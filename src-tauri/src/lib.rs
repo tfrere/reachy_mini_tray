@@ -1,15 +1,23 @@
-// Reachy Mini tray launcher - MVP
-//
-// Validates: tray icon + real `uv-trampoline` sidecar lifecycle
-// + transient first-run window with live bootstrap progress
-// + USB / Simulation connection modes + live menu state updates
-// + status icon variants (Idle / Starting / Running / Crashed)
-// + HTTP healthcheck on `GET http://127.0.0.1:8000/daemon/status`
-// + single-instance lock,
-// on macOS, with no Dock entry (LSUIElement = true).
-//
-// Out of scope: auto-update, autostart-at-login, system sleep/wake
-// reconciliation, Windows/Linux-specific signing & shortcuts.
+//! Reachy Mini tray launcher.
+//!
+//! Cross-platform (macOS / Windows / Linux) Tauri 2 app whose only UI is a
+//! tray icon + two transient webview windows (first-run setup + log viewer).
+//!
+//! What this crate owns:
+//!
+//! - Tray icon, dynamic menu, live status indicator (idle / starting /
+//!   running / crashed), connection mode toggle (USB / Simulation).
+//! - Lifecycle of the `uv-trampoline` sidecar (spawn / monitor / kill with
+//!   process-group cleanup) and an HTTP healthcheck on
+//!   `GET http://127.0.0.1:8000/api/daemon/status` to detect readiness.
+//! - First-run window driven by `setup:progress` events derived from the
+//!   trampoline's stdout milestones.
+//! - Hugging Face account submenu (sign in / out / reconnect remote),
+//!   delegating all OAuth + token storage to the daemon.
+//! - Single-instance lock so two trays can't fight over the daemon.
+//!
+//! Explicitly out of scope: auto-update, autostart-at-login, system
+//! sleep/wake reconciliation, Windows / Linux code-signing pipelines.
 
 mod hf_auth;
 mod logs;
