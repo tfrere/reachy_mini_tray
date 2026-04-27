@@ -1,0 +1,26 @@
+# Rust
+src-tauri/target/
+
+# Tauri generated
+src-tauri/gen/
+
+# Tauri sidecar binaries (built locally by ./scripts/build-sidecar.sh).
+# Marker file too: it pins the daemon's `reachy-mini` git/PyPI spec at
+# build time, regenerated on every sidecar build.
+src-tauri/binaries/uv-trampoline-*
+src-tauri/binaries/.reachy_mini_spec
+
+# Node
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+*.swp
+
+# Editor
+.vscode/
+.idea/

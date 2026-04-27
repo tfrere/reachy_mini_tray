@@ -1,0 +1,41 @@
+[package]
+name = "reachy-mini-tray"
+version = "0.1.0"
+description = "Reachy Mini Daemon tray launcher (POC)"
+authors = ["Reachy Mini Contributors"]
+edition = "2021"
+
+[lib]
+name = "reachy_mini_tray_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.5.6", features = [] }
+
+[dependencies]
+tauri                          = { version = "=2.10.3", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri-plugin-shell             = "=2.3.5"
+tauri-plugin-single-instance   = "=2.4.1"
+log                            = "=0.4.22"
+serde                          = { version = "=1.0.219", features = ["derive"] }
+serde_json                     = "=1.0.140"
+# Blocking HTTP client used to poll the daemon's `/daemon/status` readiness
+# endpoint and the `/api/hf-auth/*` routes from the account submenu. Plain
+# HTTP only (loopback), so we disable every TLS feature to keep the binary
+# lean. `reqwest` is already pulled transitively by `tauri-plugin-shell`, so
+# making it a direct dep adds no new build cost. `json` enables the
+# convenience `.json::<T>()` decoder used in `hf_auth.rs`.
+reqwest                        = { version = "=0.13.2", default-features = false, features = ["blocking", "json"] }
+
+[target.'cfg(unix)'.dependencies]
+# Used to send `killpg(2)` to the trampoline's process group when stopping
+# the daemon. Tauri's `child.kill()` only sends SIGKILL to the trampoline
+# itself, leaving its Python child alive and bound to port 8000 / USB.
+libc                           = "0.2"
+
+[profile.release]
+panic   = "abort"
+codegen-units = 1
+lto     = true
+opt-level = "s"
+strip   = true

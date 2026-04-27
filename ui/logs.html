@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reachy Mini - Logs</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #0e0f12;
+        --bg-elev: #16181c;
+        --border: #2a2d34;
+        --fg: #d8dbe2;
+        --muted: #7a808d;
+        --accent: #0a84ff;
+        --info: #8ab4f8;
+        --warn: #f6c177;
+        --error: #ff6b6b;
+        --debug: #7a808d;
+        --trace: #5a606d;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #fafafa;
+          --bg-elev: #ffffff;
+          --border: #e2e4ea;
+          --fg: #1c1d22;
+          --muted: #6b7280;
+          --info: #1d4ed8;
+          --warn: #b45309;
+          --error: #b91c1c;
+          --debug: #6b7280;
+          --trace: #9ca3af;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        overflow: hidden;
+      }
+
+      #root {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--bg-elev);
+        border-bottom: 1px solid var(--border);
+        user-select: none;
+        -webkit-app-region: drag;
+      }
+
+      header > * { -webkit-app-region: no-drag; }
+
+      .title {
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+        margin-right: 8px;
+        text-transform: uppercase;
+      }
+
+      .filters {
+        display: flex;
+        gap: 4px;
+        flex: 1;
+      }
+
+      .pill {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: background 0.1s, color 0.1s, border-color 0.1s;
+        font-family: inherit;
+        letter-spacing: 0.02em;
+      }
+
+      .pill:hover { color: var(--fg); border-color: var(--fg); }
+
+      .pill.active {
+        background: var(--fg);
+        color: var(--bg);
+        border-color: var(--fg);
+      }
+
+      .actions {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .actions button {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--fg);
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      .actions button:hover { background: var(--border); }
+
+      .actions .toggle {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--muted);
+      }
+
+      .actions .toggle.on { color: var(--info); }
+
+      .actions .toggle::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      main {
+        flex: 1;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        padding: 6px 0;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 92px 50px 64px 1fr;
+        gap: 10px;
+        padding: 1px 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .row:hover { background: var(--bg-elev); }
+
+      .row .ts { color: var(--muted); user-select: text; }
+      .row .lvl {
+        font-weight: 600;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        align-self: center;
+      }
+      .row.lvl-INFO  .lvl { color: var(--info); }
+      .row.lvl-WARN  .lvl { color: var(--warn); }
+      .row.lvl-ERROR .lvl { color: var(--error); }
+      .row.lvl-DEBUG .lvl { color: var(--debug); }
+      .row.lvl-TRACE .lvl { color: var(--trace); }
+
+      .row .tgt {
+        color: var(--muted);
+        font-size: 11px;
+        align-self: center;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+        opacity: 0.85;
+      }
+      .row.tgt-daemon .tgt { color: var(--accent); opacity: 1; }
+
+      .row .msg { color: var(--fg); }
+      .row.lvl-WARN  .msg { color: var(--warn); }
+      .row.lvl-ERROR .msg { color: var(--error); }
+
+      .empty {
+        padding: 24px;
+        text-align: center;
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      footer {
+        padding: 4px 12px;
+        font-size: 10.5px;
+        color: var(--muted);
+        background: var(--bg-elev);
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <header>
+        <span class="title">Logs</span>
+        <div class="filters" id="filters">
+          <button class="pill active" data-level="ALL">All</button>
+          <button class="pill" data-level="INFO">Info</button>
+          <button class="pill" data-level="WARN">Warn</button>
+          <button class="pill" data-level="ERROR">Error</button>
+        </div>
+        <div class="actions">
+          <button id="toggleFollow" class="toggle on">Follow</button>
+          <button id="copyAll">Copy</button>
+          <button id="clear">Clear</button>
+        </div>
+      </header>
+      <main id="main">
+        <div class="empty" id="empty">Waiting for logs&hellip;</div>
+      </main>
+      <footer>
+        <span id="count">0 lines</span>
+        <span>buffer: 2000 lines max</span>
+      </footer>
+    </div>
+
+    <script type="module">
+      const { invoke } = window.__TAURI__.core;
+      const { listen } = window.__TAURI__.event;
+
+      const main = document.getElementById("main");
+      const emptyEl = document.getElementById("empty");
+      const countEl = document.getElementById("count");
+      const filtersEl = document.getElementById("filters");
+      const followBtn = document.getElementById("toggleFollow");
+      const copyBtn = document.getElementById("copyAll");
+      const clearBtn = document.getElementById("clear");
+
+      const MAX_LINES = 2000;
+      let activeLevel = "ALL";
+      let follow = true;
+      const buffer = [];
+
+      function levelMatches(entry) {
+        return activeLevel === "ALL" || entry.level === activeLevel;
+      }
+
+      function fmtTs(ts_ms) {
+        const d = new Date(ts_ms);
+        const pad = (n) => n.toString().padStart(2, "0");
+        return (
+          pad(d.getHours()) +
+          ":" +
+          pad(d.getMinutes()) +
+          ":" +
+          pad(d.getSeconds()) +
+          "." +
+          d.getMilliseconds().toString().padStart(3, "0")
+        );
+      }
+
+      function shortTarget(target) {
+        if (!target) return "tray";
+        if (target === "daemon") return "daemon";
+        // reachy_mini_tray_lib::foo -> tray
+        if (target.startsWith("reachy_mini_tray")) return "tray";
+        return target.split("::")[0];
+      }
+
+      function rowEl(entry) {
+        const row = document.createElement("div");
+        const tgt = shortTarget(entry.target);
+        row.className = "row lvl-" + entry.level + " tgt-" + tgt;
+        row.dataset.level = entry.level;
+        const tsEl = document.createElement("span");
+        tsEl.className = "ts";
+        tsEl.textContent = fmtTs(entry.ts_ms);
+        const lvlEl = document.createElement("span");
+        lvlEl.className = "lvl";
+        lvlEl.textContent = entry.level;
+        const tgtEl = document.createElement("span");
+        tgtEl.className = "tgt";
+        tgtEl.textContent = tgt;
+        tgtEl.title = entry.target || "";
+        const msgEl = document.createElement("span");
+        msgEl.className = "msg";
+        msgEl.textContent = entry.message;
+        row.append(tsEl, lvlEl, tgtEl, msgEl);
+        return row;
+      }
+
+      function renderEntry(entry) {
+        if (emptyEl.parentNode === main) emptyEl.remove();
+        const row = rowEl(entry);
+        if (!levelMatches(entry)) row.style.display = "none";
+        main.appendChild(row);
+        // Trim DOM to MAX_LINES so we don't grow unbounded.
+        while (main.children.length > MAX_LINES) {
+          main.firstChild.remove();
+        }
+        if (follow) main.scrollTop = main.scrollHeight;
+        countEl.textContent = main.children.length + " lines";
+      }
+
+      function applyFilter() {
+        for (const row of main.children) {
+          if (row === emptyEl) continue;
+          row.style.display =
+            activeLevel === "ALL" || row.dataset.level === activeLevel
+              ? ""
+              : "none";
+        }
+        if (follow) main.scrollTop = main.scrollHeight;
+      }
+
+      filtersEl.addEventListener("click", (e) => {
+        const btn = e.target.closest(".pill");
+        if (!btn) return;
+        for (const p of filtersEl.querySelectorAll(".pill"))
+          p.classList.toggle("active", p === btn);
+        activeLevel = btn.dataset.level;
+        applyFilter();
+      });
+
+      followBtn.addEventListener("click", () => {
+        follow = !follow;
+        followBtn.classList.toggle("on", follow);
+        if (follow) main.scrollTop = main.scrollHeight;
+      });
+
+      // Drop follow mode if the user manually scrolls up.
+      main.addEventListener("scroll", () => {
+        const atBottom =
+          main.scrollHeight - main.scrollTop - main.clientHeight < 8;
+        if (!atBottom && follow) {
+          follow = false;
+          followBtn.classList.remove("on");
+        } else if (atBottom && !follow) {
+          follow = true;
+          followBtn.classList.add("on");
+        }
+      });
+
+      copyBtn.addEventListener("click", async () => {
+        const text = Array.from(main.querySelectorAll(".row"))
+          .filter((row) => row.style.display !== "none")
+          .map(
+            (row) =>
+              row.querySelector(".ts").textContent +
+              " [" +
+              row.querySelector(".lvl").textContent +
+              "] [" +
+              row.querySelector(".tgt").textContent +
+              "] " +
+              row.querySelector(".msg").textContent,
+          )
+          .join("\n");
+        try {
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = "Copied";
+          setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+        } catch (e) {
+          copyBtn.textContent = "Failed";
+          setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+        }
+      });
+
+      clearBtn.addEventListener("click", async () => {
+        await invoke("clear_logs");
+        main.innerHTML = "";
+        main.appendChild(emptyEl);
+        countEl.textContent = "0 lines";
+      });
+
+      // Initial backfill from the in-memory ring buffer.
+      try {
+        const initial = await invoke("get_logs");
+        for (const entry of initial) renderEntry(entry);
+      } catch (e) {
+        console.error("get_logs failed", e);
+      }
+
+      // Live append.
+      await listen("log:append", (event) => {
+        renderEntry(event.payload);
+      });
+    </script>
+  </body>
+</html>

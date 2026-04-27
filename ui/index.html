@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reachy Mini - First-time setup</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --bg-elev: #fafafa;
+        --fg: #1c1c1e;
+        --fg-dim: #6c6c70;
+        --fg-faint: #8e8e93;
+        --accent: #0a84ff;
+        --accent-soft: rgba(10, 132, 255, 0.12);
+        --success: #34c759;
+        --warn: #d97706;
+        --error: #ef4444;
+        --divider: rgba(60, 60, 67, 0.12);
+        --track: rgba(120, 120, 128, 0.18);
+        --console-bg: #f6f6f7;
+        --console-border: rgba(60, 60, 67, 0.12);
+        --chip-bg: rgba(10, 132, 255, 0.1);
+        --chip-fg: #0a84ff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1c1e;
+          --bg-elev: #232325;
+          --fg: #f2f2f7;
+          --fg-dim: #a1a1a6;
+          --fg-faint: #6e6e73;
+          --divider: rgba(255, 255, 255, 0.08);
+          --track: rgba(120, 120, 128, 0.32);
+          --console-bg: #141416;
+          --console-border: rgba(255, 255, 255, 0.06);
+          --chip-bg: rgba(10, 132, 255, 0.18);
+          --chip-fg: #4ea1ff;
+          --warn: #f59e0b;
+          --error: #f87171;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      main {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 24px 28px 20px;
+        gap: 18px;
+      }
+
+      /* ---------- Header ---------- */
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .header-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+        background: linear-gradient(135deg, var(--accent), #5e5ce6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+      }
+      .header-icon svg {
+        width: 20px;
+        height: 20px;
+        color: #fff;
+      }
+      .header-text {
+        flex: 1;
+        min-width: 0;
+      }
+      h1 {
+        margin: 0 0 2px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+      }
+      .subtitle {
+        margin: 0;
+        color: var(--fg-dim);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* ---------- Progress card ---------- */
+      .progress-card {
+        background: var(--bg-elev);
+        border: 1px solid var(--divider);
+        border-radius: 10px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .progress-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .step {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--fg);
+        line-height: 1.35;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-variant-numeric: tabular-nums;
+        font-size: 11.5px;
+        font-weight: 600;
+        background: var(--chip-bg);
+        color: var(--chip-fg);
+        padding: 3px 8px;
+        border-radius: 999px;
+        flex-shrink: 0;
+        letter-spacing: 0.2px;
+      }
+      .chip.done {
+        background: rgba(52, 199, 89, 0.15);
+        color: var(--success);
+      }
+
+      /* ---------- Progress track ---------- */
+      .progress-track {
+        position: relative;
+        width: 100%;
+        height: 5px;
+        background: var(--track);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .progress-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: var(--p, 0%);
+        background: var(--accent);
+        border-radius: 999px;
+        transition: width 0.3s ease-out, background-color 0.3s ease-out;
+      }
+      .progress-track.indeterminate .progress-bar {
+        width: 35% !important;
+        animation: slide 1.6s ease-in-out infinite;
+        transition: none;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        50% {
+          transform: translateX(180%);
+        }
+        100% {
+          transform: translateX(-100%);
+        }
+      }
+      .progress-track.done .progress-bar {
+        background: var(--success);
+      }
+
+      .meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11.5px;
+        color: var(--fg-faint);
+        font-variant-numeric: tabular-nums;
+      }
+      .meta .left {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .pulse-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--accent);
+        animation: pulse 1.4s ease-in-out infinite;
+        flex-shrink: 0;
+      }
+      .pulse-dot.done {
+        background: var(--success);
+        animation: none;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.45;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+
+      /* ---------- Live console ---------- */
+      .console-wrap {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        gap: 6px;
+      }
+      .console-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--fg-faint);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+      .console {
+        flex: 1;
+        min-height: 80px;
+        overflow-y: auto;
+        background: var(--console-bg);
+        border: 1px solid var(--console-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-family: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 11px;
+        line-height: 1.55;
+        color: var(--fg-dim);
+        scrollbar-width: thin;
+      }
+      .console::-webkit-scrollbar {
+        width: 8px;
+      }
+      .console::-webkit-scrollbar-thumb {
+        background: rgba(120, 120, 128, 0.28);
+        border-radius: 4px;
+      }
+      .console::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .console-line {
+        white-space: pre-wrap;
+        word-break: break-word;
+        opacity: 0.85;
+      }
+      .console-line:last-child {
+        opacity: 1;
+      }
+      .console-line.warn {
+        color: var(--warn);
+        opacity: 1;
+      }
+      .console-line.error {
+        color: var(--error);
+        font-weight: 500;
+        opacity: 1;
+      }
+      .console-empty {
+        color: var(--fg-faint);
+        font-style: italic;
+      }
+
+      /* ---------- Footer ---------- */
+      .footer-note {
+        margin: 0;
+        text-align: center;
+        font-size: 11px;
+        color: var(--fg-faint);
+        line-height: 1.4;
+      }
+      .footer-note strong {
+        color: var(--fg-dim);
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="header">
+        <div class="header-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="7" width="16" height="13" rx="3" />
+            <path d="M9 7V4h6v3" />
+            <circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none" />
+            <path d="M9 17h6" />
+          </svg>
+        </div>
+        <div class="header-text">
+          <h1>Setting up Reachy Mini</h1>
+          <p class="subtitle">
+            Installing Python runtime and dependencies. This only happens once.
+          </p>
+        </div>
+      </div>
+
+      <section class="progress-card">
+        <div class="progress-row">
+          <div class="step" id="step-label">Initializing&hellip;</div>
+          <span class="chip" id="chip">0%</span>
+        </div>
+        <div class="progress-track" id="track">
+          <div class="progress-bar" id="bar"></div>
+        </div>
+        <div class="meta">
+          <span class="left">
+            <span class="pulse-dot" id="pulse"></span>
+            <span id="meta-status">Working&hellip;</span>
+          </span>
+          <span id="elapsed">0s</span>
+        </div>
+      </section>
+
+      <div class="console-wrap">
+        <div class="console-label">
+          <span>Live output</span>
+          <span id="console-counter"></span>
+        </div>
+        <div class="console" id="console" aria-live="polite">
+          <div class="console-line console-empty">Waiting for daemon output&hellip;</div>
+        </div>
+      </div>
+
+      <p class="footer-note">
+        <strong>Grab a coffee.</strong> Keep this window open until setup completes - it will close automatically.
+      </p>
+    </main>
+
+    <script>
+      // The first-run window listens to two Tauri events from the Rust side:
+      //   - `setup:progress` (BootstrapProgress payload) on every daemon line
+      //     while bootstrap is running. Fields are all optional so a single
+      //     line can update some of: progress %, step label, console line.
+      //   - `setup:done` when the daemon healthcheck passes. Triggers the
+      //     "ready" state and an auto-close after 1 s.
+      //
+      // Indeterminate mode: the Rust side may emit `percent: 255` to mean
+      // "no useful percentage available, show a pulse animation" (used during
+      // the long GStreamer plugin-registry scan).
+      const INDETERMINATE = 255;
+      const CONSOLE_MAX_LINES = 200;
+
+      const bar = document.getElementById("bar");
+      const track = document.getElementById("track");
+      const stepLabel = document.getElementById("step-label");
+      const chip = document.getElementById("chip");
+      const pulse = document.getElementById("pulse");
+      const metaStatus = document.getElementById("meta-status");
+      const elapsedEl = document.getElementById("elapsed");
+      const consoleEl = document.getElementById("console");
+      const consoleCounter = document.getElementById("console-counter");
+
+      const tauri = window.__TAURI__;
+
+      let highestPercent = 0;
+      let isDone = false;
+      let consoleHasOutput = false;
+      let consoleLineCount = 0;
+      const startedAt = performance.now();
+
+      function formatElapsed(ms) {
+        const total = Math.floor(ms / 1000);
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
+      }
+
+      // Tick the elapsed counter every second; cheap and reassures the user
+      // during long silent phases like GStreamer plugin scan.
+      setInterval(() => {
+        if (!isDone) {
+          elapsedEl.textContent = formatElapsed(performance.now() - startedAt);
+        }
+      }, 1000);
+
+      function setDeterminate(percent) {
+        track.classList.remove("indeterminate");
+        bar.style.setProperty("--p", percent + "%");
+        chip.textContent = percent + "%";
+      }
+
+      function setIndeterminate() {
+        track.classList.add("indeterminate");
+        chip.textContent = "...";
+      }
+
+      function applyProgress(p) {
+        if (isDone) return;
+
+        // Step label: always reflect the latest hint we got, regardless of
+        // whether it carries a percent or not. Avoids the "frozen text"
+        // feeling between strong milestones.
+        if (typeof p.label === "string" && p.label.length > 0) {
+          stepLabel.textContent = p.label;
+        }
+
+        if (typeof p.percent === "number") {
+          if (p.percent === INDETERMINATE) {
+            setIndeterminate();
+          } else if (p.percent >= highestPercent) {
+            highestPercent = p.percent;
+            setDeterminate(p.percent);
+          }
+          // else: ignore backwards moves (stale event from previous gen)
+        }
+
+        if (typeof p.line === "string" && p.line.length > 0) {
+          appendConsoleLine(p.line);
+        }
+      }
+
+      function classifyLine(line) {
+        // Light heuristic: WARN / ERROR keywords surface as colored lines so
+        // crashes (segfault, address-in-use) are visible in the live tail.
+        const lower = line.toLowerCase();
+        if (
+          lower.includes("error") ||
+          lower.includes("fatal") ||
+          lower.includes("segmentation fault") ||
+          lower.includes("traceback")
+        )
+          return "error";
+        if (lower.includes("warning")) return "warn";
+        return "";
+      }
+
+      function appendConsoleLine(line) {
+        if (!consoleHasOutput) {
+          consoleEl.textContent = "";
+          consoleHasOutput = true;
+        }
+
+        const div = document.createElement("div");
+        div.className = "console-line";
+        const cls = classifyLine(line);
+        if (cls) div.classList.add(cls);
+        // Drop the leading `[bootstrap] ` prefix if present: it's redundant
+        // with the step label and just steals horizontal space.
+        div.textContent = line.replace(/^\[bootstrap\]\s*/, "");
+        consoleEl.appendChild(div);
+        consoleLineCount++;
+
+        // Cap the buffer so a runaway daemon can't OOM the webview.
+        while (consoleEl.children.length > CONSOLE_MAX_LINES) {
+          consoleEl.firstChild.remove();
+        }
+        consoleCounter.textContent =
+          consoleLineCount + " line" + (consoleLineCount === 1 ? "" : "s");
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      function markDone() {
+        if (isDone) return;
+        isDone = true;
+        highestPercent = 100;
+        track.classList.remove("indeterminate");
+        track.classList.add("done");
+        bar.style.setProperty("--p", "100%");
+        chip.textContent = "Done";
+        chip.classList.add("done");
+        pulse.classList.add("done");
+        stepLabel.textContent = "Reachy Mini is ready";
+        metaStatus.textContent = "Setup complete";
+        elapsedEl.textContent = formatElapsed(performance.now() - startedAt);
+        // Small delay so the user sees the final "ready" state instead of a
+        // window vanishing the instant the bar hits 100%.
+        setTimeout(async () => {
+          if (tauri?.core?.invoke) {
+            try {
+              await tauri.core.invoke("close_first_run_window");
+              return;
+            } catch (e) {
+              console.warn("invoke failed, falling back to window.close()", e);
+            }
+          }
+          window.close();
+        }, 1000);
+      }
+
+      if (tauri?.event?.listen) {
+        tauri.event
+          .listen("setup:progress", (evt) => applyProgress(evt.payload || {}))
+          .catch((err) => console.warn("listen(setup:progress) failed", err));
+        tauri.event
+          .listen("setup:done", () => markDone())
+          .catch((err) => console.warn("listen(setup:done) failed", err));
+      } else {
+        // Should never happen: Tauri's global is injected before page load.
+        console.error("Tauri global missing - progress events disabled");
+      }
+    </script>
+  </body>
+</html>

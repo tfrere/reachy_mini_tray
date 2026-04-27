@@ -1,0 +1,20 @@
+{
+  "name": "reachy-mini-tray",
+  "version": "0.1.0",
+  "description": "Reachy Mini tray launcher (POC)",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:sidecar": "bash ./scripts/build-sidecar.sh",
+    "build:sidecar:pypi": "bash ./scripts/build-sidecar.sh pypi",
+    "build:sidecar:develop": "bash ./scripts/build-sidecar.sh develop",
+    "build:sidecar:main": "bash ./scripts/build-sidecar.sh main",
+    "build:sidecar:mobile-umbrella": "bash ./scripts/build-sidecar.sh integration/mobile-app-daemon",
+    "build:sidecar:branch": "bash ./scripts/build-sidecar.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "=2.10.1"
+  }
+}
