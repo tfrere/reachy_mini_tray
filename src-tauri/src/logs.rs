@@ -82,8 +82,7 @@ impl Log for AppLogger {
         let target = record.target();
         // Filter out noisy crates so the in-app log window stays focused on
         // our own messages. stderr keeps everything for power users.
-        let is_ours = target.starts_with("reachy_mini_tray")
-            || target.starts_with("reachy-mini-tray");
+        let is_ours = target.starts_with("reachy_mini_tray");
 
         let entry = LogEntry {
             ts_ms: now_ms(),

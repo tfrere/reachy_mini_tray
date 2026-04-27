@@ -1,4 +1,4 @@
-# reachy-mini-tray
+# reachy_mini_tray
 
 A lightweight Tauri 2 menu-bar app that runs the [Reachy Mini](https://www.pollen-robotics.com/) Python daemon as a background service. It is deliberately tray-only (no main window after first-run setup) and is intended as a slimmer alternative to `reachy_mini_desktop_app` for users who only need to keep the daemon running so the robot is reachable from the [mobile app](https://github.com/pollen-robotics/reachy_mini_mobile_app) over Hugging Face's WebRTC relay.
 
@@ -17,7 +17,7 @@ A lightweight Tauri 2 menu-bar app that runs the [Reachy Mini](https://www.polle
 
 ```
 ┌────────────────────────────┐
-│ reachy-mini-tray (Rust)    │  Tauri 2.x, no main window
+│ reachy_mini_tray (Rust)    │  Tauri 2.x, no main window
 │  • tray menu               │
 │  • first-run window        │  WebView (UI in ./ui/)
 │  • log viewer window       │
@@ -52,7 +52,7 @@ The daemon is the same upstream package used by the desktop app and the wireless
 ```
 parent/
 ├── reachy_mini_desktop_app/   ← required for the sidecar build
-└── reachy-mini-tray/          ← this repo
+└── reachy_mini_tray/          ← this repo
 ```
 
 ## Quick start
@@ -98,7 +98,7 @@ The `.app` bundle ends up in `src-tauri/target/release/bundle/macos/`. Code-sign
 ## Layout
 
 ```
-reachy-mini-tray/
+reachy_mini_tray/
 ├── ui/                          # Static frontend
 │   ├── index.html              # First-run bootstrap window
 │   └── logs.html               # Log viewer window
