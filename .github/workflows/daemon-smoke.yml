@@ -1,0 +1,115 @@
+name: Daemon smoke test
+
+# This is the headless equivalent of reachy_mini_desktop_app's WebDriver
+# E2E suite. The tray app has no main window we can drive with
+# tauri-driver, so we instead exercise the only thing that can break
+# silently between releases: the `uv-trampoline` bootstrap pipeline that
+# downloads uv, creates the venv, pip-installs reachy-mini, and brings
+# the FastAPI daemon up.
+#
+# The matrix runs on each host OS so we catch platform-specific
+# regressions (Linux PEP 668 externally-managed venv, Windows path
+# handling, macOS arm64 wheels, etc.) with the actual `uv-trampoline`
+# binary that ships in the bundle.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      desktop_app_ref:
+        description: 'Git ref of pollen-robotics/reachy-mini-desktop-app to check out for uv-wrapper (default: develop).'
+        required: false
+        type: string
+        default: 'develop'
+      reachy_mini_source:
+        description: 'Branch / tag of pollen-robotics/reachy_mini to bake into the trampoline (default: pypi).'
+        required: false
+        type: string
+        default: 'pypi'
+
+jobs:
+  smoke:
+    name: Bootstrap daemon (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            shell: bash
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            shell: bash
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            shell: pwsh
+
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout reachy_mini_tray
+        uses: actions/checkout@v4
+        with:
+          path: reachy_mini_tray
+
+      - name: Checkout reachy-mini-desktop-app (for uv-wrapper)
+        uses: actions/checkout@v4
+        with:
+          repository: pollen-robotics/reachy-mini-desktop-app
+          ref: ${{ github.event.inputs.desktop_app_ref || 'develop' }}
+          path: reachy_mini_desktop_app
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: reachy_mini_desktop_app/uv-wrapper -> target
+          shared-key: smoke-${{ matrix.target }}
+
+      - name: Install Linux daemon runtime dependencies
+        if: matrix.os == 'ubuntu-24.04'
+        # The Python daemon imports portaudio + GStreamer at startup even
+        # under `--no-media`, but it won't open any device. Install the
+        # shared libraries so `import` doesn't raise; we don't need any
+        # audio/video plugins beyond `-base`.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libportaudio2 \
+            libasound2-dev \
+            libgstreamer1.0-0 \
+            libgstreamer-plugins-base1.0-0 \
+            curl
+
+      - name: Run daemon bootstrap smoke test (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        working-directory: reachy_mini_tray
+        env:
+          UV_WRAPPER_DIR: ${{ github.workspace }}/reachy_mini_desktop_app/uv-wrapper
+          TARGET_TRIPLET: ${{ matrix.target }}
+          REACHY_MINI_SOURCE: ${{ github.event.inputs.reachy_mini_source || 'pypi' }}
+          # First run on a cold cache can take ~5 min on a free runner.
+          # 12 minutes leaves room for HF / PyPI hiccups.
+          READY_TIMEOUT_SECS: 720
+        run: bash ./scripts/test/test-daemon-bootstrap.sh
+
+      - name: Run daemon bootstrap smoke test (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        working-directory: reachy_mini_tray
+        env:
+          UV_WRAPPER_DIR: ${{ github.workspace }}\reachy_mini_desktop_app\uv-wrapper
+          TARGET_TRIPLET: ${{ matrix.target }}
+          REACHY_MINI_SOURCE: ${{ github.event.inputs.reachy_mini_source || 'pypi' }}
+          READY_TIMEOUT_SECS: 720
+        run: pwsh -File .\scripts\test\test-daemon-bootstrap.ps1

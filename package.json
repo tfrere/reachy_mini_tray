@@ -12,7 +12,8 @@
     "build:sidecar:develop": "bash ./scripts/build-sidecar.sh develop",
     "build:sidecar:main": "bash ./scripts/build-sidecar.sh main",
     "build:sidecar:mobile-umbrella": "bash ./scripts/build-sidecar.sh integration/mobile-app-daemon",
-    "build:sidecar:branch": "bash ./scripts/build-sidecar.sh"
+    "build:sidecar:branch": "bash ./scripts/build-sidecar.sh",
+    "test:daemon-bootstrap": "bash ./scripts/test/test-daemon-bootstrap.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "=2.10.1"

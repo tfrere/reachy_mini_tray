@@ -86,6 +86,31 @@ npm run build:sidecar:branch <any-branch>
 
 The marker `src-tauri/binaries/.reachy_mini_spec` records the chosen spec; running the script with a different spec will trigger an in-place venv upgrade on the next launch (or use `Reset setup…` from the tray for a clean reinstall).
 
+## Daemon bootstrap smoke test
+
+The tray has no main window to drive with `tauri-driver`, so instead of a
+GUI E2E suite we ship a headless test that exercises the whole bootstrap
+pipeline (uv download → Python install → venv → `pip install reachy-mini`
+→ daemon HTTP up). It is the exact equivalent of "did the daemon install
+work?" in the desktop app's E2E.
+
+```bash
+npm run test:daemon-bootstrap
+# or, in CI:
+bash ./scripts/test/test-daemon-bootstrap.sh
+pwsh -File .\scripts\test\test-daemon-bootstrap.ps1   # Windows
+```
+
+The script redirects the platform's data dir to a fresh temp folder, so
+it always starts from a clean install and never touches the real user
+state. The daemon is launched in `--mockup-sim --no-media` mode (no
+hardware, no GStreamer / portaudio at runtime). Cold-cache run is
+~5 minutes; subsequent runs of the same script reuse nothing (each run
+is fully isolated) so plan accordingly.
+
+This same script runs on Linux, macOS, and Windows in
+`.github/workflows/daemon-smoke.yml` on every push to `main` / `develop`.
+
 ## Build a release bundle
 
 ```bash
