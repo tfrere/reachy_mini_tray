@@ -54,9 +54,11 @@ pub fn data_dir() -> Option<PathBuf> {
         if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
             return Some(PathBuf::from(xdg).join(SHARED_FOLDER_LINUX));
         }
-        return std::env::var("HOME")
-            .ok()
-            .map(|home| PathBuf::from(home).join(".local/share").join(SHARED_FOLDER_LINUX));
+        return std::env::var("HOME").ok().map(|home| {
+            PathBuf::from(home)
+                .join(".local/share")
+                .join(SHARED_FOLDER_LINUX)
+        });
     }
 
     #[allow(unreachable_code)]

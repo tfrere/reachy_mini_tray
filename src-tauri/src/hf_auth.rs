@@ -124,11 +124,7 @@ impl AuthStatusStore {
     }
 
     pub fn snapshot(&self) -> AuthSnapshot {
-        let mut snap = self
-            .inner
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let mut snap = self.inner.lock().map(|g| g.clone()).unwrap_or_default();
         snap.oauth_in_flight = self.oauth_running.load(Ordering::SeqCst);
         snap
     }
@@ -395,7 +391,7 @@ fn oauth_flow_blocking(app: &AppHandle) -> Result<String, String> {
         let app_state = app.state::<AppState>();
         if !matches!(current_daemon_state(&app_state), DaemonState::Running) {
             let _ = client
-                .delete(&format!("{}/oauth/session/{}", API_BASE, session_id))
+                .delete(format!("{}/oauth/session/{}", API_BASE, session_id))
                 .send();
             return Err("daemon stopped during OAuth flow".to_string());
         }
@@ -404,7 +400,7 @@ fn oauth_flow_blocking(app: &AppHandle) -> Result<String, String> {
             // Best-effort cleanup so the daemon's session table doesn't
             // accumulate dead entries.
             let _ = client
-                .delete(&format!("{}/oauth/session/{}", API_BASE, session_id))
+                .delete(format!("{}/oauth/session/{}", API_BASE, session_id))
                 .send();
             return Err("OAuth poll timed out (10 min)".to_string());
         }

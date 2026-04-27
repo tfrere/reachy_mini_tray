@@ -161,12 +161,18 @@ pub fn push_external(app: &AppHandle, target: &str, level: &str, message: String
 pub fn parse_line_level(line: &str, default: &str) -> String {
     let upper = line.to_ascii_uppercase();
     for needle in [
-        "[CRITICAL]", "CRITICAL:",
-        "[ERROR]", "ERROR:",
-        "[WARNING]", "WARNING:",
-        "[WARN]", "WARN:",
-        "[INFO]", "INFO:",
-        "[DEBUG]", "DEBUG:",
+        "[CRITICAL]",
+        "CRITICAL:",
+        "[ERROR]",
+        "ERROR:",
+        "[WARNING]",
+        "WARNING:",
+        "[WARN]",
+        "WARN:",
+        "[INFO]",
+        "INFO:",
+        "[DEBUG]",
+        "DEBUG:",
     ] {
         if upper.contains(needle) {
             return normalize_level(needle.trim_matches(|c: char| !c.is_ascii_alphabetic()));

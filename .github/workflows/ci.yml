@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  rust:
+    name: Rust check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Smoke-test the Rust crate on each host OS so we catch
+        # platform-specific regressions early (e.g. Unix-only `libc::killpg`,
+        # Tauri Linux deps, Windows path handling). The full release builds
+        # still happen in `release.yml` on tags.
+        include:
+          - os: ubuntu-24.04
+          - os: macos-latest
+          - os: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: ci-${{ matrix.os }}
+
+      - name: Install Linux Tauri dependencies
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Create placeholder sidecar binaries
+        # `tauri::Builder` resolves `externalBin` at compile time, so we need
+        # an empty file at the expected path even for `cargo check` /
+        # `cargo clippy`. The real binary is built by build-sidecar.{sh,ps1}
+        # in the release workflow; here we just want lint to pass.
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          if [[ "${{ matrix.os }}" == windows-* ]]; then
+            : > src-tauri/binaries/uv-trampoline-x86_64-pc-windows-msvc.exe
+          elif [[ "${{ matrix.os }}" == macos-* ]]; then
+            : > src-tauri/binaries/uv-trampoline-aarch64-apple-darwin
+            : > src-tauri/binaries/uv-trampoline-x86_64-apple-darwin
+            chmod +x src-tauri/binaries/uv-trampoline-*
+          else
+            : > src-tauri/binaries/uv-trampoline-x86_64-unknown-linux-gnu
+            chmod +x src-tauri/binaries/uv-trampoline-*
+          fi
+
+      - name: cargo fmt
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: cargo clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml

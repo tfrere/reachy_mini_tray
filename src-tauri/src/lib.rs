@@ -71,9 +71,9 @@ const HEALTHCHECK_URL: &str = "http://127.0.0.1:8000/api/daemon/status";
 const HEALTHCHECK_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Hard timeout for reaching `Running` after a Start. Sized to cover a fresh
-/// `uv-trampoline` bootstrap on a slow first-run machine: uv download (~15 s)
-/// + Python install (~30 s) + venv + reachy-mini install (~60 s) + GStreamer
-/// pre-warm (~120 s) + headroom. Subsequent starts are typically <5 s.
+/// `uv-trampoline` bootstrap on a slow first-run machine (uv download ~15 s,
+/// Python install ~30 s, venv + reachy-mini install ~60 s, GStreamer pre-warm
+/// ~120 s, plus headroom). Subsequent starts are typically <5 s.
 const HEALTHCHECK_MAX_DURATION: Duration = Duration::from_secs(300);
 
 /// Per-request HTTP timeout used while polling `/daemon/status`.
@@ -244,7 +244,9 @@ fn spawn_real_daemon(app: &AppHandle, mode: Mode, generation: u64) -> Result<Com
         // UTF-8 (rare on macOS, common on Windows).
         .env("PYTHONIOENCODING", "utf-8");
 
-    let (rx, child) = cmd.spawn().map_err(|e| format!("sidecar spawn failed: {}", e))?;
+    let (rx, child) = cmd
+        .spawn()
+        .map_err(|e| format!("sidecar spawn failed: {}", e))?;
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -504,10 +506,7 @@ fn start_healthcheck(app: AppHandle, generation: u64) {
             }
 
             if started.elapsed() > HEALTHCHECK_MAX_DURATION {
-                log::error!(
-                    "healthcheck timed out after {:?}",
-                    HEALTHCHECK_MAX_DURATION
-                );
+                log::error!("healthcheck timed out after {:?}", HEALTHCHECK_MAX_DURATION);
                 set_daemon_state(&app_state, DaemonState::Crashed);
                 refresh_status(&app);
                 return;
@@ -764,8 +763,7 @@ fn compose_with_dot(base_rgba: &[u8], width: u32, height: u32, color: [u8; 3]) -
                 let a = (disc_cov * 255.0) as u32;
                 let inv = 255 - a;
                 let bg_a = pixels[idx + 3] as u32;
-                pixels[idx] =
-                    ((color[0] as u32 * a + pixels[idx] as u32 * inv) / 255) as u8;
+                pixels[idx] = ((color[0] as u32 * a + pixels[idx] as u32 * inv) / 255) as u8;
                 pixels[idx + 1] =
                     ((color[1] as u32 * a + pixels[idx + 1] as u32 * inv) / 255) as u8;
                 pixels[idx + 2] =
@@ -956,13 +954,7 @@ fn account_slot(
         true,
         None::<&str>,
     )?;
-    let signout = MenuItem::with_id(
-        app,
-        ID_ACCOUNT_SIGNOUT,
-        "Sign out",
-        true,
-        None::<&str>,
-    )?;
+    let signout = MenuItem::with_id(app, ID_ACCOUNT_SIGNOUT, "Sign out", true, None::<&str>)?;
     let label = logged_in_label(snap);
     let sub = Submenu::with_id_and_items(
         app,
@@ -1046,8 +1038,7 @@ fn build_tray_menu(
     let sep_footer = PredefinedMenuItem::separator(app)?;
     let sep_quit = PredefinedMenuItem::separator(app)?;
 
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
-        vec![&toggle, &sep_top, &mode_submenu];
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&toggle, &sep_top, &mode_submenu];
 
     match &account {
         AccountSlot::Flat(item) => {
@@ -1110,18 +1101,14 @@ fn show_logs_window(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(
-        app,
-        LOGS_WINDOW_LABEL,
-        WebviewUrl::App("logs.html".into()),
-    )
-    .title("Reachy Mini - Logs")
-    .inner_size(720.0, 480.0)
-    .min_inner_size(420.0, 240.0)
-    .resizable(true)
-    .center()
-    .visible(true)
-    .build()?;
+    WebviewWindowBuilder::new(app, LOGS_WINDOW_LABEL, WebviewUrl::App("logs.html".into()))
+        .title("Reachy Mini - Logs")
+        .inner_size(720.0, 480.0)
+        .min_inner_size(420.0, 240.0)
+        .resizable(true)
+        .center()
+        .visible(true)
+        .build()?;
     Ok(())
 }
 

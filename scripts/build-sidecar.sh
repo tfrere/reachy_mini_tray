@@ -35,13 +35,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRAY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd "$TRAY_ROOT/.." && pwd)"
-SRC_CRATE="$PROJECT_ROOT/reachy_mini_desktop_app/uv-wrapper"
+
+# Where to find the `uv-wrapper` Rust crate that contains the trampoline.
+# Override priority:
+#   1. $UV_WRAPPER_DIR  (CI / custom checkouts)
+#   2. ../reachy_mini_desktop_app/uv-wrapper (sibling, default for dev)
+if [[ -n "${UV_WRAPPER_DIR:-}" ]]; then
+    SRC_CRATE="$UV_WRAPPER_DIR"
+else
+    SRC_CRATE="$PROJECT_ROOT/reachy_mini_desktop_app/uv-wrapper"
+fi
 DST_DIR="$TRAY_ROOT/src-tauri/binaries"
 SPEC_MARKER="$DST_DIR/.reachy_mini_spec"
 
 if [[ ! -d "$SRC_CRATE" ]]; then
     echo "Error: cannot find uv-wrapper crate at $SRC_CRATE" >&2
-    echo "Make sure reachy_mini_desktop_app is checked out next to reachy_mini_tray." >&2
+    echo "Either set UV_WRAPPER_DIR to point to a local clone of" >&2
+    echo "reachy_mini_desktop_app/uv-wrapper, or check out the repo as a" >&2
+    echo "sibling of reachy_mini_tray." >&2
     exit 1
 fi
 

@@ -1,0 +1,242 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.2.0). Used to set tauri.conf.json#version when not running on a tag.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run - build everything and upload as workflow artifacts but do not create a GitHub Release.'
+        required: false
+        type: boolean
+        default: false
+      desktop_app_ref:
+        description: 'Git ref of pollen-robotics/reachy-mini-desktop-app to check out for uv-wrapper (default: develop).'
+        required: false
+        type: string
+        default: 'develop'
+
+# This workflow mirrors `release-unified.yml` from reachy_mini_desktop_app
+# but is significantly slimmer because the tray app:
+#   - has no auto-updater wired up yet (no Tauri signing key required)
+#   - has no Apple notarization / Windows signing secrets configured yet
+# Both can be added incrementally later by introducing the corresponding
+# `Setup ... signing` steps. For now we ship unsigned bundles and skip
+# `latest.json` / GitHub Pages plumbing.
+
+jobs:
+  build-and-release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: darwin-aarch64
+            shell: bash
+          # macos-15-intel keeps native x86_64 builds available until Aug 2027,
+          # which is the same approach reachy_mini_desktop_app takes.
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: darwin-x86_64
+            shell: bash
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x86_64
+            shell: pwsh
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x86_64
+            shell: bash
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Dry run notice
+        if: github.event.inputs.dry_run == 'true'
+        shell: bash
+        run: |
+          echo "🧪 DRY RUN MODE: artifacts will be uploaded to the Actions run"
+          echo "🧪 but no GitHub Release will be created."
+
+      - name: Checkout reachy_mini_tray
+        uses: actions/checkout@v4
+        with:
+          path: reachy_mini_tray
+
+      - name: Checkout reachy-mini-desktop-app (for uv-wrapper)
+        uses: actions/checkout@v4
+        with:
+          repository: pollen-robotics/reachy-mini-desktop-app
+          ref: ${{ github.event.inputs.desktop_app_ref || 'develop' }}
+          path: reachy_mini_desktop_app
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            reachy_mini_tray/src-tauri -> target
+            reachy_mini_desktop_app/uv-wrapper -> target
+          shared-key: release-${{ matrix.target }}
+
+      - name: Ensure Rust target is installed
+        shell: bash
+        run: |
+          rustup target add ${{ matrix.target }}
+          rustup target list --installed
+
+      - name: Install Linux Tauri dependencies
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgdk-pixbuf2.0-dev \
+            libpango1.0-dev \
+            libcairo2-dev \
+            libglib2.0-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            pkg-config \
+            file \
+            dpkg-dev \
+            libfuse2t64 \
+            squashfs-tools \
+            patchelf
+
+      - name: Install npm dependencies
+        shell: bash
+        working-directory: reachy_mini_tray
+        run: npm install
+
+      - name: Extract version
+        id: version
+        shell: bash
+        working-directory: reachy_mini_tray
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [ "$VERSION" = "$GITHUB_REF" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | head -1 | cut -d'"' -f4)
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "❌ Could not determine version"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "✅ Resolved version: $VERSION"
+
+      - name: Update version in tauri.conf.json
+        shell: bash
+        working-directory: reachy_mini_tray
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          else
+            sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            rm -f src-tauri/tauri.conf.json.bak
+          fi
+          grep '"version"' src-tauri/tauri.conf.json | head -1
+
+      - name: Build sidecar (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        working-directory: reachy_mini_tray
+        env:
+          UV_WRAPPER_DIR: ${{ github.workspace }}/reachy_mini_desktop_app/uv-wrapper
+          TARGET_TRIPLET: ${{ matrix.target }}
+        run: bash ./scripts/build-sidecar.sh
+
+      - name: Build sidecar (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        working-directory: reachy_mini_tray
+        env:
+          UV_WRAPPER_DIR: ${{ github.workspace }}\reachy_mini_desktop_app\uv-wrapper
+          TARGET_TRIPLET: ${{ matrix.target }}
+        run: |
+          pwsh -File .\scripts\build-sidecar.ps1
+          $sidecar = "src-tauri\binaries\uv-trampoline-${{ matrix.target }}.exe"
+          if (-not (Test-Path $sidecar)) {
+            Write-Error "❌ Sidecar binary not found: $sidecar"
+            Get-ChildItem src-tauri\binaries\
+            exit 1
+          }
+          Write-Host "✅ Sidecar built: $sidecar"
+
+      - name: Build Tauri app
+        shell: bash
+        working-directory: reachy_mini_tray
+        env:
+          # AppImage tools rely on FUSE which isn't available on the runner;
+          # APPIMAGE_EXTRACT_AND_RUN tells them to self-extract instead.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Stage release artifacts
+        id: stage
+        shell: bash
+        working-directory: reachy_mini_tray
+        run: |
+          STAGE="$GITHUB_WORKSPACE/release-stage/${{ matrix.platform }}"
+          mkdir -p "$STAGE"
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+
+          echo "📦 Bundle directory: $BUNDLE_DIR"
+          if [ -d "$BUNDLE_DIR" ]; then
+            find "$BUNDLE_DIR" -maxdepth 3 -type f \
+              \( -name "*.dmg" -o -name "*.app.tar.gz" \
+                 -o -name "*.msi" -o -name "*.exe" \
+                 -o -name "*.deb" -o -name "*.AppImage" \
+                 -o -name "*.AppImage.tar.gz" \) \
+              -exec cp -v {} "$STAGE/" \;
+          fi
+
+          echo "📦 Staged files for ${{ matrix.platform }}:"
+          ls -la "$STAGE" || true
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: ${{ steps.stage.outputs.stage }}/*
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.inputs.dry_run != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: 'Reachy Mini Tray v${{ steps.version.outputs.version }}'
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          files: ${{ steps.stage.outputs.stage }}/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

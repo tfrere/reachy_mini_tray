@@ -1,7 +1,7 @@
 {
   "name": "reachy_mini_tray",
   "version": "0.1.0",
-  "description": "Reachy Mini tray launcher (POC)",
+  "description": "Reachy Mini tray launcher",
   "private": true,
   "scripts": {
     "tauri": "tauri",
