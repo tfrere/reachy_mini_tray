@@ -160,16 +160,46 @@ reachy_mini_tray/
     ├── capabilities/
     ├── python-entitlements.plist
     └── src/
-        ├── main.rs
-        ├── lib.rs                   # Tray + daemon lifecycle + first-run window
-        ├── hf_auth.rs               # OAuth + status polling
-        ├── logs.rs                  # Ring buffer + log window IPC
-        └── paths.rs                 # Per-OS data-dir helpers
+        ├── main.rs                  # Thin entry point → reachy_mini_tray_lib::run
+        ├── lib.rs                   # Module wiring + Tauri builder + tray event router
+        ├── state.rs                 # AppState, Mode, DaemonState, IconCache + accessors
+        ├── daemon.rs                # uv-trampoline lifecycle (spawn / monitor / kill / healthcheck)
+        ├── tray_icon.rs             # Status-badge composition (RGBA disc + ring)
+        ├── tray_menu.rs             # Dynamic menu builder + refresh_status entry point
+        ├── commands.rs              # Webview window helpers + Tauri IPC commands
+        ├── hf_auth.rs               # OAuth orchestrator + status poller
+        ├── api.rs                   # Daemon base URL + shared reqwest client factory
+        ├── logs.rs                  # In-memory ring buffer + log window IPC
+        └── paths.rs                 # Per-OS data-dir helpers + bootstrap detection
 ```
 
-## Out of scope
+## Roadmap
 
-Auto-update, autostart-at-login, system sleep/wake handling, Windows / Linux code-signing pipelines. These are tracked separately and may land in future releases.
+Planned for upcoming releases:
+
+- **macOS permissions view** — a dedicated panel (likely surfaced from the
+  first-run window and reachable later from the tray menu) that shows
+  which macOS TCC permissions the daemon needs (USB serial / Input
+  Monitoring, Microphone if audio I/O is used, etc.), their current
+  granted/denied state, and one-click deep-links to the relevant pane in
+  System Settings. Today users have to dig through *Settings → Privacy &
+  Security* on their own when something silently fails.
+- **Auto-update on macOS, Windows and Linux** — Tauri's built-in updater,
+  fed by the GitHub Releases produced by `release.yml`. On macOS via the
+  signed `.app`, on Windows via the NSIS installer, on Linux via the
+  AppImage stream (deb users will need to keep updating through their
+  package manager). Requires code-signing to be in place first (see
+  below).
+- **Code-signing pipelines** for macOS notarization and Windows
+  Authenticode (Linux AppImage uses a detached `.sig`). Currently bundles
+  ship unsigned, which is fine for internal beta but will trigger
+  Gatekeeper / SmartScreen warnings for end users.
+
+## Out of scope (for now)
+
+Autostart-at-login and system sleep/wake handling. These have low product
+demand and clear workarounds (the user can launch the tray manually after
+boot/wake), so they sit behind the roadmap items above.
 
 ## License
 
