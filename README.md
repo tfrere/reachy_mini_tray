@@ -45,9 +45,9 @@ The daemon is the same upstream package used by the desktop app and the wireless
 
 ## Requirements
 
-- macOS 12+ (Apple Silicon and Intel). Windows support is planned but not yet shipped.
+- **macOS** 12+ (Apple Silicon and Intel), **Windows** 10+ (x86_64), **Linux** (x86_64, glibc-based distros). All three are built and smoke-tested in CI; macOS is the daily-driver platform, Windows / Linux are best-effort.
 - Rust toolchain (`rustup`), Node 18+, and the Tauri prerequisites listed at <https://tauri.app/start/prerequisites/>.
-- A sibling checkout of [`reachy_mini_desktop_app`](https://github.com/pollen-robotics/reachy_mini_desktop_app) next to this repo. The `uv-trampoline` sidecar is built from `reachy_mini_desktop_app/uv-wrapper/` so both apps share a single bootstrap implementation.
+- A sibling checkout of [`reachy-mini-desktop-app`](https://github.com/pollen-robotics/reachy-mini-desktop-app) next to this repo. The `uv-trampoline` sidecar is built from `reachy_mini_desktop_app/uv-wrapper/` so both apps share a single bootstrap implementation. CI checks it out automatically; for local dev keep the two repos as siblings.
 
 ```
 parent/
@@ -113,41 +113,63 @@ This same script runs on Linux, macOS, and Windows in
 
 ## Build a release bundle
 
+Locally for the host platform:
+
 ```bash
 npm run build:sidecar
 npm run build      # invokes `tauri build`
 ```
 
-The `.app` bundle ends up in `src-tauri/target/release/bundle/macos/`. Code-signing and notarization use the standard Tauri configuration; see `src-tauri/tauri.conf.json`.
+`tauri build` produces, depending on the host OS:
+
+| Platform | Artifact                                                                                  |
+|----------|-------------------------------------------------------------------------------------------|
+| macOS    | `src-tauri/target/release/bundle/macos/*.app` + `dmg/*.dmg`                               |
+| Windows  | `src-tauri/target/release/bundle/nsis/*.exe`                                              |
+| Linux    | `src-tauri/target/release/bundle/deb/*.deb` + `appimage/*.AppImage`                       |
+
+Code-signing and notarization use the standard Tauri configuration; see `src-tauri/tauri.conf.json` and `src-tauri/Info.plist`.
+
+### Cross-platform release via CI
+
+`.github/workflows/release.yml` builds the matrix (macOS aarch64 + x86_64, Windows x86_64, Linux x86_64) on every `v*` tag push, attaches all installers to the GitHub Release, and supports a `workflow_dispatch` dry-run mode. `.github/workflows/ci.yml` runs `cargo fmt` / `clippy` / `check` on every push, and `.github/workflows/daemon-smoke.yml` runs the bootstrap smoke test on each OS (see below).
 
 ## Layout
 
 ```
 reachy_mini_tray/
-├── ui/                          # Static frontend
-│   ├── index.html              # First-run bootstrap window
-│   └── logs.html               # Log viewer window
+├── ui/                              # Static frontend
+│   ├── index.html                   # First-run bootstrap window
+│   └── logs.html                    # Log viewer window
 ├── scripts/
-│   └── build-sidecar.sh        # Builds uv-trampoline → src-tauri/binaries/
+│   ├── build-sidecar.sh             # Builds uv-trampoline → src-tauri/binaries/ (Unix)
+│   ├── build-sidecar.ps1            # Same, Windows port
+│   └── test/
+│       ├── test-daemon-bootstrap.sh   # Headless smoke test (Unix)
+│       └── test-daemon-bootstrap.ps1  # Headless smoke test (Windows)
+├── .github/workflows/
+│   ├── ci.yml                       # cargo fmt / clippy / check (3 OS)
+│   ├── release.yml                  # Tagged release: build + bundle + GH Release (3 OS)
+│   └── daemon-smoke.yml             # End-to-end daemon bootstrap test (3 OS)
 └── src-tauri/
     ├── Cargo.toml
     ├── tauri.conf.json
     ├── build.rs
-    ├── Info.plist               # LSUIElement = true
+    ├── Info.plist                   # LSUIElement = true (macOS menu-bar only)
     ├── icons/
     ├── capabilities/
     ├── python-entitlements.plist
     └── src/
         ├── main.rs
-        ├── lib.rs               # Tray + daemon lifecycle + first-run window
-        ├── hf_auth.rs           # OAuth + status polling
-        ├── logs.rs              # Ring buffer + log window IPC
-        └── paths.rs             # Per-OS data-dir helpers
+        ├── lib.rs                   # Tray + daemon lifecycle + first-run window
+        ├── hf_auth.rs               # OAuth + status polling
+        ├── logs.rs                  # Ring buffer + log window IPC
+        └── paths.rs                 # Per-OS data-dir helpers
 ```
 
 ## Out of scope
 
-Auto-update, autostart-at-login, system sleep/wake handling, Linux support, Windows code-signing pipeline. These are tracked separately and may land in future releases.
+Auto-update, autostart-at-login, system sleep/wake handling, Windows / Linux code-signing pipelines. These are tracked separately and may land in future releases.
 
 ## License
 
