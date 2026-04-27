@@ -26,7 +26,8 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
-use crate::{current_daemon_state, AppState, DaemonState};
+use crate::state::{current_daemon_state, AppState, DaemonState};
+use crate::tray_menu::request_menu_refresh;
 
 const API_BASE: &str = "http://127.0.0.1:8000/api/hf-auth";
 
@@ -288,7 +289,7 @@ pub fn start_oauth_flow(app: AppHandle) {
         return;
     }
 
-    crate::request_menu_refresh(&app);
+    request_menu_refresh(&app);
 
     std::thread::spawn(move || {
         let result = oauth_flow_blocking(&app);
@@ -331,7 +332,7 @@ pub fn start_oauth_flow(app: AppHandle) {
         // Open a burst-poll window so the next ~20 seconds run at 2 s
         // cadence, picking up the relay's "connected" transition fast.
         store.trigger_burst();
-        crate::request_menu_refresh(&app);
+        request_menu_refresh(&app);
     });
 }
 
@@ -465,7 +466,7 @@ pub fn sign_out(app: &AppHandle) {
         store.set_auth(AuthStatus::default());
         store.set_relay(None);
         store.trigger_burst();
-        crate::request_menu_refresh(&app);
+        request_menu_refresh(&app);
     });
 }
 
@@ -496,7 +497,7 @@ pub fn refresh_relay(app: &AppHandle) {
         }
         let store = app.state::<AuthStatusStore>();
         store.trigger_burst();
-        crate::request_menu_refresh(&app);
+        request_menu_refresh(&app);
     });
 }
 
@@ -655,7 +656,7 @@ pub fn start_status_poller(app: AppHandle) {
 
                 if last_signature.as_deref() != Some(&signature) {
                     last_signature = Some(signature);
-                    crate::request_menu_refresh(&app);
+                    request_menu_refresh(&app);
                 }
 
                 let interval = if store.in_burst_window() {
@@ -669,7 +670,7 @@ pub fn start_status_poller(app: AppHandle) {
                     last_signature = None;
                     let store = app.state::<AuthStatusStore>();
                     store.set_relay(None);
-                    crate::request_menu_refresh(&app);
+                    request_menu_refresh(&app);
                 }
                 sticky_username = None;
                 consecutive_logged_out = 0;
