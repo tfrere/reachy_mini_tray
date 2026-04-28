@@ -156,7 +156,7 @@ fn spawn_real_daemon(app: &AppHandle, mode: Mode, generation: u64) -> Result<Com
     let args = build_daemon_args(mode);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
-    let cmd = app
+    let mut cmd = app
         .shell()
         .sidecar("uv-trampoline")
         .map_err(|e| format!("sidecar lookup failed: {}", e))?
@@ -165,6 +165,14 @@ fn spawn_real_daemon(app: &AppHandle, mode: Mode, generation: u64) -> Result<Com
         // the in-app logs window on locales where the system default isn't
         // UTF-8 (rare on macOS, common on Windows).
         .env("PYTHONIOENCODING", "utf-8");
+
+    // Forward REACHY_CENTRAL_URL to the daemon child so it can target a
+    // fork of the central signaling Space (test / staging) without
+    // patching the source. Read explicitly rather than relying on
+    // platform-dependent env inheritance through tauri-plugin-shell.
+    if let Ok(url) = std::env::var("REACHY_CENTRAL_URL") {
+        cmd = cmd.env("REACHY_CENTRAL_URL", url);
+    }
 
     let (rx, child) = cmd
         .spawn()
