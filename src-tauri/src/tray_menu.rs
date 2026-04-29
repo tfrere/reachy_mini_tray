@@ -12,14 +12,22 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, Wry};
 
 use crate::hf_auth;
-use crate::state::{current_daemon_state, current_mode, AppState, DaemonState, IconCache, Mode};
+use crate::state::{
+    current_daemon_state, current_mode, current_serialport, current_usb_devices, AppState,
+    DaemonState, IconCache, Mode,
+};
 
 pub(crate) const TRAY_ID: &str = "main";
 
 pub(crate) const ID_TOGGLE: &str = "toggle";
-pub(crate) const ID_MODE_SUBMENU: &str = "mode";
-pub(crate) const ID_MODE_USB: &str = "mode_usb";
-pub(crate) const ID_MODE_SIM: &str = "mode_sim";
+pub(crate) const ID_TARGET_SUBMENU: &str = "target";
+/// Prefix for individual USB-device menu items. The full ID is
+/// `target:usb:<index>` where `<index>` is the position of the device
+/// in `AppState.usb_devices` at menu build time. Indexing rather than
+/// embedding the serialport keeps muda IDs free of slashes / colons.
+pub(crate) const ID_TARGET_USB_PREFIX: &str = "target:usb:";
+pub(crate) const ID_TARGET_SIM: &str = "target:sim";
+pub(crate) const ID_TARGET_NO_USB: &str = "target:none";
 /// Top-level submenu shown when the user is logged in. Its label is the
 /// live account status (e.g. `@tfrere · remote on`); children are the
 /// secondary actions (Reconnect, Sign out).
@@ -61,11 +69,17 @@ pub(crate) fn refresh_status(app: &AppHandle) {
     }
 
     // ---- Tooltip ----
+    //
+    // We append the short port name when the user picked a specific USB
+    // device, so hovering the tray icon already reveals which Reachy
+    // Mini is targeted without expanding the menu.
+    let serialport = current_serialport(&app_state);
+    let target_label = compose_target_label(mode, serialport.as_deref());
     let tooltip = match state {
-        DaemonState::Idle => format!("Reachy Mini - Idle ({})", mode.label()),
-        DaemonState::Starting => format!("Reachy Mini - Starting ({})...", mode.label()),
-        DaemonState::Running => format!("Reachy Mini - Running ({})", mode.label()),
-        DaemonState::Crashed => format!("Reachy Mini - Crashed ({})", mode.label()),
+        DaemonState::Idle => format!("Reachy Mini - Idle ({})", target_label),
+        DaemonState::Starting => format!("Reachy Mini - Starting ({})...", target_label),
+        DaemonState::Running => format!("Reachy Mini - Running ({})", target_label),
+        DaemonState::Crashed => format!("Reachy Mini - Crashed ({})", target_label),
     };
     if let Err(e) = tray.set_tooltip(Some(&tooltip)) {
         log::warn!("set_tooltip failed: {}", e);
@@ -76,13 +90,32 @@ pub(crate) fn refresh_status(app: &AppHandle) {
         .try_state::<hf_auth::AuthStatusStore>()
         .map(|s| s.snapshot())
         .unwrap_or_default();
-    match build_tray_menu(app, state, mode, &snap) {
+    let devices = current_usb_devices(&app_state);
+    match build_tray_menu(app, state, mode, serialport.as_deref(), &devices, &snap) {
         Ok(menu) => {
             if let Err(e) = tray.set_menu(Some(menu)) {
                 log::warn!("set_menu failed: {}", e);
             }
         }
         Err(e) => log::warn!("build_tray_menu failed: {}", e),
+    }
+}
+
+/// Compose a short user-facing target label like `USB · cu.usbserial-2120`
+/// or `Simulation`, used in the tooltip and the `Robot` submenu title.
+///
+/// In USB mode without a selected port we report `USB (auto)` so the
+/// user understands the daemon will run its own discovery.
+fn compose_target_label(mode: Mode, serialport: Option<&str>) -> String {
+    match mode {
+        Mode::Simulation => "Simulation".to_string(),
+        Mode::Usb => match serialport {
+            Some(path) if !path.is_empty() => {
+                let short = path.strip_prefix("/dev/").unwrap_or(path);
+                format!("USB \u{00b7} {}", short)
+            }
+            _ => "USB (auto)".to_string(),
+        },
     }
 }
 
@@ -186,11 +219,14 @@ fn account_slot(
     Ok(AccountSlot::Sub(sub))
 }
 
-/// Build a fresh tray menu reflecting the given `(state, mode, snap)`.
+/// Build a fresh tray menu reflecting the given
+/// `(state, mode, serialport, usb_devices, snap)`.
 pub(crate) fn build_tray_menu(
     app: &AppHandle,
     state: DaemonState,
     mode: Mode,
+    serialport: Option<&str>,
+    usb_devices: &[crate::usb::UsbDevice],
     snap: &hf_auth::AuthSnapshot,
 ) -> tauri::Result<Menu<Wry>> {
     // ---- Toggle (Start / Stop / Restart) ----
@@ -202,31 +238,9 @@ pub(crate) fn build_tray_menu(
     };
     let toggle = MenuItem::with_id(app, ID_TOGGLE, toggle_text, toggle_enabled, None::<&str>)?;
 
-    // ---- Connection mode submenu ----
+    // ---- Robot submenu ----
     let busy = matches!(state, DaemonState::Starting | DaemonState::Running);
-    let mode_usb = CheckMenuItem::with_id(
-        app,
-        ID_MODE_USB,
-        "USB (default)",
-        true,
-        mode == Mode::Usb,
-        None::<&str>,
-    )?;
-    let mode_sim = CheckMenuItem::with_id(
-        app,
-        ID_MODE_SIM,
-        "Simulation",
-        true,
-        mode == Mode::Simulation,
-        None::<&str>,
-    )?;
-    let mode_submenu = Submenu::with_id_and_items(
-        app,
-        ID_MODE_SUBMENU,
-        "Connection mode",
-        !busy,
-        &[&mode_usb, &mode_sim],
-    )?;
+    let target_submenu = build_target_submenu(app, mode, serialport, usb_devices, !busy)?;
 
     // ---- Account slot ----
     let account = account_slot(app, state, snap)?;
@@ -253,7 +267,8 @@ pub(crate) fn build_tray_menu(
     let sep_footer = PredefinedMenuItem::separator(app)?;
     let sep_quit = PredefinedMenuItem::separator(app)?;
 
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&toggle, &sep_top, &mode_submenu];
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        vec![&toggle, &sep_top, &target_submenu];
 
     match &account {
         AccountSlot::Flat(item) => {
@@ -274,4 +289,114 @@ pub(crate) fn build_tray_menu(
     items.push(&quit);
 
     Menu::with_items(app, &items)
+}
+
+/// Build the `Robot` submenu, dynamically populated with the detected
+/// USB devices and a Simulation fallback.
+///
+/// Layout:
+///
+/// - When at least one USB Reachy is plugged in: one CheckMenuItem per
+///   device (selected when both `Mode::Usb` is active **and** the
+///   selected serialport matches), then a separator, then a
+///   `Simulation` CheckMenuItem.
+/// - When no USB device is detected: a single disabled "No Reachy Mini
+///   detected (plug USB)" row, a separator, and the `Simulation` row.
+///   The user can still launch in sim mode.
+///
+/// The submenu's title carries a short summary of the current target
+/// (e.g. `Robot: USB · cu.usbserial-2120`) so the user can see the
+/// selection without expanding the submenu.
+fn build_target_submenu(
+    app: &AppHandle,
+    mode: Mode,
+    serialport: Option<&str>,
+    usb_devices: &[crate::usb::UsbDevice],
+    enabled: bool,
+) -> tauri::Result<Submenu<Wry>> {
+    // Build all leaf items first so they outlive the borrow we need
+    // when collecting them into a slice for `Submenu::with_id_and_items`.
+    let mut usb_items: Vec<CheckMenuItem<Wry>> = Vec::with_capacity(usb_devices.len());
+    for (idx, dev) in usb_devices.iter().enumerate() {
+        let id = format!("{}{}", ID_TARGET_USB_PREFIX, idx);
+        let checked = matches!(mode, Mode::Usb) && serialport == Some(dev.serialport.as_str());
+        let item = CheckMenuItem::with_id(app, id, &dev.label, true, checked, None::<&str>)?;
+        usb_items.push(item);
+    }
+
+    let no_device_row = if usb_devices.is_empty() {
+        Some(MenuItem::with_id(
+            app,
+            ID_TARGET_NO_USB,
+            "No Reachy Mini detected (plug USB)",
+            // Disabled - purely informational. Clicking it is a no-op.
+            false,
+            None::<&str>,
+        )?)
+    } else {
+        None
+    };
+
+    let sim_item = CheckMenuItem::with_id(
+        app,
+        ID_TARGET_SIM,
+        "Simulation",
+        true,
+        matches!(mode, Mode::Simulation),
+        None::<&str>,
+    )?;
+    let sep = PredefinedMenuItem::separator(app)?;
+
+    let title = format!("Robot: {}", compose_target_label(mode, serialport));
+
+    let mut children: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = Vec::new();
+    if let Some(row) = no_device_row.as_ref() {
+        children.push(row);
+    }
+    for item in usb_items.iter() {
+        children.push(item);
+    }
+    children.push(&sep);
+    children.push(&sim_item);
+
+    Submenu::with_id_and_items(app, ID_TARGET_SUBMENU, &title, enabled, &children)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_label_simulation_is_constant() {
+        assert_eq!(compose_target_label(Mode::Simulation, None), "Simulation");
+        // Even when a stale serialport is still in state, sim mode wins.
+        assert_eq!(
+            compose_target_label(Mode::Simulation, Some("/dev/cu.usbserial-2120")),
+            "Simulation"
+        );
+    }
+
+    #[test]
+    fn target_label_usb_with_port_strips_dev_prefix() {
+        assert_eq!(
+            compose_target_label(Mode::Usb, Some("/dev/cu.usbserial-2120")),
+            "USB \u{00b7} cu.usbserial-2120"
+        );
+    }
+
+    #[test]
+    fn target_label_usb_without_port_says_auto() {
+        assert_eq!(compose_target_label(Mode::Usb, None), "USB (auto)");
+        assert_eq!(compose_target_label(Mode::Usb, Some("")), "USB (auto)");
+    }
+
+    #[test]
+    fn target_label_usb_with_windows_port() {
+        // Windows ports like COM3 don't have a /dev/ prefix; the label
+        // should pass them through untouched.
+        assert_eq!(
+            compose_target_label(Mode::Usb, Some("COM3")),
+            "USB \u{00b7} COM3"
+        );
+    }
 }

@@ -27,6 +27,7 @@
 //! - [`api`]: daemon base URL + shared `reqwest` client factory.
 //! - [`logs`]: in-memory ring-buffer logger.
 //! - [`paths`]: data-dir layout (shared with `reachy_mini_desktop_app`).
+//! - [`usb`]: enumerate / filter Reachy Mini USB-serial devices.
 //!
 //! Explicitly out of scope: auto-update, autostart-at-login, system
 //! sleep/wake reconciliation, Windows / Linux code-signing pipelines.
@@ -40,6 +41,7 @@ mod paths;
 mod state;
 mod tray_icon;
 mod tray_menu;
+mod usb;
 
 use std::sync::atomic::Ordering;
 
@@ -50,13 +52,14 @@ use crate::commands::{show_first_run_window, show_logs_window};
 use crate::daemon::{kill_daemon, start_daemon, stop_daemon};
 use crate::logs::LogStore;
 use crate::state::{
-    current_daemon_state, set_daemon_state, AppState, DaemonState, Mode, QUIT_REQUESTED,
+    current_daemon_state, current_usb_devices, set_daemon_state, set_serialport, AppState,
+    DaemonState, Mode, QUIT_REQUESTED,
 };
 use crate::tray_icon::build_icon_cache;
 use crate::tray_menu::{
     build_tray_menu, refresh_status, ID_ACCOUNT_REFRESH_RELAY, ID_ACCOUNT_SIGNIN,
-    ID_ACCOUNT_SIGNOUT, ID_ACCOUNT_SUBMENU, ID_MODE_SIM, ID_MODE_USB, ID_QUIT, ID_RESET_SETUP,
-    ID_SHOW_LOGS, ID_TOGGLE, TRAY_ID,
+    ID_ACCOUNT_SIGNOUT, ID_ACCOUNT_SUBMENU, ID_QUIT, ID_RESET_SETUP, ID_SHOW_LOGS, ID_TARGET_SIM,
+    ID_TARGET_USB_PREFIX, ID_TOGGLE, TRAY_ID,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -106,6 +109,8 @@ pub fn run() {
                 &app.handle().clone(),
                 DaemonState::Idle,
                 Mode::Usb,
+                None,
+                &[],
                 &initial_snap,
             )?;
 
@@ -135,34 +140,52 @@ pub fn run() {
                             DaemonState::Starting => {}
                         }
                     }
-                    ID_MODE_USB => {
+                    ID_TARGET_SIM => {
                         let app_state = app.state::<AppState>();
                         if matches!(
                             current_daemon_state(&app_state),
                             DaemonState::Starting | DaemonState::Running
                         ) {
-                            log::info!("ignored mode change: daemon busy");
-                            return;
-                        }
-                        if let Ok(mut guard) = app_state.mode.lock() {
-                            *guard = Mode::Usb;
-                        }
-                        log::info!("mode set to USB");
-                        refresh_status(app);
-                    }
-                    ID_MODE_SIM => {
-                        let app_state = app.state::<AppState>();
-                        if matches!(
-                            current_daemon_state(&app_state),
-                            DaemonState::Starting | DaemonState::Running
-                        ) {
-                            log::info!("ignored mode change: daemon busy");
+                            log::info!("ignored target change: daemon busy");
                             return;
                         }
                         if let Ok(mut guard) = app_state.mode.lock() {
                             *guard = Mode::Simulation;
                         }
-                        log::info!("mode set to Simulation");
+                        // Drop any cached serialport: in sim mode we don't
+                        // want a stale path lingering in state, otherwise
+                        // a future menu refresh could mis-render the
+                        // selected device.
+                        set_serialport(&app_state, None);
+                        log::info!("target set to Simulation");
+                        refresh_status(app);
+                    }
+                    other if other.starts_with(ID_TARGET_USB_PREFIX) => {
+                        let app_state = app.state::<AppState>();
+                        if matches!(
+                            current_daemon_state(&app_state),
+                            DaemonState::Starting | DaemonState::Running
+                        ) {
+                            log::info!("ignored target change: daemon busy");
+                            return;
+                        }
+                        // Resolve `target:usb:<index>` against the cached
+                        // device list. Indexes are stable for the lifetime
+                        // of a single menu render: the menu is rebuilt on
+                        // every refresh from the same `usb_devices` list,
+                        // so a click while the menu is open always lands
+                        // on the right device.
+                        let idx = other[ID_TARGET_USB_PREFIX.len()..].parse::<usize>().ok();
+                        let devices = current_usb_devices(&app_state);
+                        let Some(dev) = idx.and_then(|i| devices.get(i)).cloned() else {
+                            log::warn!("USB target id {} did not resolve to a known device", other);
+                            return;
+                        };
+                        if let Ok(mut guard) = app_state.mode.lock() {
+                            *guard = Mode::Usb;
+                        }
+                        set_serialport(&app_state, Some(dev.serialport.clone()));
+                        log::info!("target set to USB ({})", dev.serialport);
                         refresh_status(app);
                     }
                     ID_ACCOUNT_SIGNIN => {
@@ -224,6 +247,40 @@ pub fn run() {
             // it's `Running` and refreshes the account submenu labels.
             // Idles (slower cadence, no HTTP) when the daemon is down.
             hf_auth::start_status_poller(app_handle.clone());
+
+            // ---- USB device scanner ----
+            //
+            // Synchronous initial scan (so `refresh_status` further down
+            // already renders the right device list) then a background
+            // thread takes over to react to hot-plug / unplug.
+            let initial_changed = usb::scan_and_apply(&app_handle);
+            let initial_count = current_usb_devices(&app_handle.state::<AppState>()).len();
+            log::info!(
+                "USB scan: found {} Reachy Mini device(s) (changed={})",
+                initial_count,
+                initial_changed
+            );
+            // First-launch UX guard: if no robot is plugged in AND we
+            // are about to start the long bootstrap (uv download / venv
+            // creation / etc.), default the connection mode to
+            // Simulation so the daemon doesn't crash with "no serial
+            // port" right after setup completes. The user can always
+            // switch to USB once a robot is plugged in. We only do this
+            // BEFORE bootstrap; on subsequent launches the user's last
+            // choice (USB) wins.
+            if !paths::is_bootstrap_done() && initial_count == 0 {
+                let app_state = app.state::<AppState>();
+                if let Ok(mut guard) = app_state.mode.lock() {
+                    *guard = Mode::Simulation;
+                }
+                log::info!("first-launch with no Reachy detected: defaulting to Simulation");
+                // The mode change above happened after `scan_and_apply`
+                // already requested a refresh (or didn't, if cache was
+                // unchanged); force an explicit refresh so the menu
+                // reflects the new mode immediately.
+                refresh_status(&app_handle);
+            }
+            usb::start_scanner(app_handle.clone());
 
             // ---- First-run window + auto-bootstrap ----
             //

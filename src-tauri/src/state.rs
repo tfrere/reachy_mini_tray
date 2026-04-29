@@ -12,8 +12,10 @@
 //!
 //! 1. `state.daemon`
 //! 2. `state.mode`
-//! 3. `state.state`
-//! 4. `state.generation`
+//! 3. `state.serialport`
+//! 4. `state.usb_devices`
+//! 5. `state.state`
+//! 6. `state.generation`
 //!
 //! Accessors below each take a single lock and release it before returning,
 //! so external callers should generally not need to lock anything by hand.
@@ -23,6 +25,8 @@ use std::sync::Mutex;
 
 use tauri::image::Image;
 use tauri_plugin_shell::process::CommandChild;
+
+use crate::usb::UsbDevice;
 
 /// Set to `true` only when the user explicitly chooses Quit from the tray
 /// menu. All other exit requests (last window closed, Cmd+Q on first-run
@@ -42,12 +46,6 @@ impl Mode {
         match self {
             Mode::Usb => "usb",
             Mode::Simulation => "simulation",
-        }
-    }
-    pub(crate) fn label(&self) -> &'static str {
-        match self {
-            Mode::Usb => "USB",
-            Mode::Simulation => "Simulation",
         }
     }
 }
@@ -72,6 +70,15 @@ pub struct AppState {
     /// `.kill()` call: callers `take()` first then drop the guard.
     pub daemon: Mutex<Option<CommandChild>>,
     pub mode: Mutex<Mode>,
+    /// User-selected USB serial port to pass to the daemon as
+    /// `--serialport <path>`. `None` means "let the daemon auto-detect"
+    /// (its default). Only consulted when `mode` is `Mode::Usb`.
+    pub serialport: Mutex<Option<String>>,
+    /// Last cached snapshot of the USB-attached Reachy Minis we found
+    /// (refreshed periodically by the USB scanner thread while the
+    /// daemon is `Idle` / `Crashed`). The tray menu reads this to
+    /// render the per-device rows.
+    pub usb_devices: Mutex<Vec<UsbDevice>>,
     pub state: Mutex<DaemonState>,
     /// Monotonically increases each time we (re)start a daemon. Used to
     /// discard late healthcheck / monitor callbacks from a previous run
@@ -84,6 +91,8 @@ impl AppState {
         Self {
             daemon: Mutex::new(None),
             mode: Mutex::new(Mode::Usb),
+            serialport: Mutex::new(None),
+            usb_devices: Mutex::new(Vec::new()),
             state: Mutex::new(DaemonState::Idle),
             generation: Mutex::new(0),
         }
@@ -111,6 +120,41 @@ pub struct IconCache {
 
 pub(crate) fn current_mode(state: &AppState) -> Mode {
     state.mode.lock().map(|g| *g).unwrap_or(Mode::Usb)
+}
+
+pub(crate) fn current_serialport(state: &AppState) -> Option<String> {
+    state.serialport.lock().ok().and_then(|g| g.clone())
+}
+
+/// Replace the user-selected USB serialport. `None` reverts to the
+/// daemon's `auto` mode.
+pub(crate) fn set_serialport(state: &AppState, path: Option<String>) {
+    if let Ok(mut g) = state.serialport.lock() {
+        *g = path;
+    }
+}
+
+pub(crate) fn current_usb_devices(state: &AppState) -> Vec<UsbDevice> {
+    state
+        .usb_devices
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
+
+/// Replace the cached USB-device list. Returns `true` if the new list
+/// differs from the previous one, so callers can short-circuit menu
+/// rebuilds when nothing changed.
+pub(crate) fn set_usb_devices(state: &AppState, devices: Vec<UsbDevice>) -> bool {
+    let mut guard = match state.usb_devices.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    if *guard == devices {
+        return false;
+    }
+    *guard = devices;
+    true
 }
 
 pub(crate) fn current_daemon_state(state: &AppState) -> DaemonState {

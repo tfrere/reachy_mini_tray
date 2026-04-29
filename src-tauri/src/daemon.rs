@@ -25,8 +25,8 @@ use crate::api::{local_client, DAEMON_BASE_URL};
 use crate::commands::FIRST_RUN_WINDOW_LABEL;
 use crate::logs;
 use crate::state::{
-    current_daemon_state, current_generation, current_mode, next_generation, set_daemon_state,
-    AppState, DaemonState, Mode,
+    current_daemon_state, current_generation, current_mode, current_serialport, next_generation,
+    set_daemon_state, AppState, DaemonState, Mode,
 };
 use crate::tray_menu::refresh_status;
 
@@ -117,7 +117,14 @@ pub struct BootstrapProgress {
 /// The trampoline interprets `args[0]` as the Python interpreter path
 /// (relative to its data dir) and execs it with `args[1..]` once bootstrap
 /// is complete. Hence the leading `.venv/bin/python3`.
-pub(crate) fn build_daemon_args(mode: Mode) -> Vec<String> {
+///
+/// `serialport` is only meaningful in `Mode::Usb`. When `Some(path)`, the
+/// daemon is told exactly which port to open instead of running its own
+/// auto-discovery (which picks the first match arbitrarily when several
+/// robots are plugged in). `None` falls back to the daemon's `auto`
+/// default. The arg is omitted entirely in `Mode::Simulation` since it
+/// would be ignored anyway.
+pub(crate) fn build_daemon_args(mode: Mode, serialport: Option<&str>) -> Vec<String> {
     #[cfg(target_os = "windows")]
     let python = ".venv\\Scripts\\python.exe";
     #[cfg(not(target_os = "windows"))]
@@ -135,8 +142,16 @@ pub(crate) fn build_daemon_args(mode: Mode) -> Vec<String> {
         "--no-wake-up-on-start".to_string(),
     ];
 
-    if matches!(mode, Mode::Simulation) {
-        args.push("--mockup-sim".to_string());
+    match mode {
+        Mode::Simulation => args.push("--mockup-sim".to_string()),
+        Mode::Usb => {
+            if let Some(path) = serialport {
+                if !path.is_empty() {
+                    args.push("--serialport".to_string());
+                    args.push(path.to_string());
+                }
+            }
+        }
     }
 
     args
@@ -152,8 +167,13 @@ pub(crate) fn build_daemon_args(mode: Mode) -> Vec<String> {
 /// events from the child, pushes them to the in-app logs window, parses
 /// bootstrap milestones for the first-run progress bar, and reacts to
 /// process termination (Crashed transitions, etc).
-fn spawn_real_daemon(app: &AppHandle, mode: Mode, generation: u64) -> Result<CommandChild, String> {
-    let args = build_daemon_args(mode);
+fn spawn_real_daemon(
+    app: &AppHandle,
+    mode: Mode,
+    serialport: Option<&str>,
+    generation: u64,
+) -> Result<CommandChild, String> {
+    let args = build_daemon_args(mode, serialport);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
     let mut cmd = app
@@ -633,6 +653,7 @@ pub(crate) fn start_daemon(app: &AppHandle) {
         return;
     }
     let mode = current_mode(&app_state);
+    let serialport = current_serialport(&app_state);
 
     // Pre-flight: kill any pre-existing daemon left over from a crash or a
     // previous version of the tray that didn't use process-group cleanup.
@@ -645,13 +666,14 @@ pub(crate) fn start_daemon(app: &AppHandle) {
     let gen = next_generation(&app_state);
     refresh_status(app);
 
-    match spawn_real_daemon(app, mode, gen) {
+    match spawn_real_daemon(app, mode, serialport.as_deref(), gen) {
         Ok(child) => {
             let pid = child.pid();
             log::info!(
-                "daemon spawned pid={} mode={} gen={}",
+                "daemon spawned pid={} mode={} serialport={} gen={}",
                 pid,
                 mode.as_str(),
+                serialport.as_deref().unwrap_or("auto"),
                 gen
             );
             if let Ok(mut guard) = app_state.daemon.lock() {
@@ -687,10 +709,11 @@ mod tests {
 
     #[test]
     fn build_daemon_args_usb_has_no_mockup() {
-        let args = build_daemon_args(Mode::Usb);
+        let args = build_daemon_args(Mode::Usb, None);
         assert!(args.iter().any(|a| a == "--desktop-app-daemon"));
         assert!(args.iter().any(|a| a == "--no-wake-up-on-start"));
         assert!(!args.iter().any(|a| a == "--mockup-sim"));
+        assert!(!args.iter().any(|a| a == "--serialport"));
         // The trampoline interprets args[0] as the python interpreter path.
         let py = &args[0];
         if cfg!(target_os = "windows") {
@@ -704,8 +727,39 @@ mod tests {
 
     #[test]
     fn build_daemon_args_simulation_adds_mockup() {
-        let args = build_daemon_args(Mode::Simulation);
+        let args = build_daemon_args(Mode::Simulation, None);
         assert!(args.iter().any(|a| a == "--mockup-sim"));
+    }
+
+    #[test]
+    fn build_daemon_args_usb_injects_explicit_serialport() {
+        let args = build_daemon_args(Mode::Usb, Some("/dev/cu.usbserial-2120"));
+        let idx = args
+            .iter()
+            .position(|a| a == "--serialport")
+            .expect("--serialport flag missing");
+        assert_eq!(
+            args.get(idx + 1).map(String::as_str),
+            Some("/dev/cu.usbserial-2120")
+        );
+    }
+
+    #[test]
+    fn build_daemon_args_simulation_ignores_serialport() {
+        // In sim mode we never want `--serialport` even if a user-selected
+        // port is still cached from a previous USB session: the daemon
+        // would happily try to open it during `--mockup-sim` startup.
+        let args = build_daemon_args(Mode::Simulation, Some("/dev/cu.usbserial-2120"));
+        assert!(args.iter().any(|a| a == "--mockup-sim"));
+        assert!(!args.iter().any(|a| a == "--serialport"));
+    }
+
+    #[test]
+    fn build_daemon_args_usb_skips_empty_serialport() {
+        // Defensive: if a UI ever passes an empty string we treat it the
+        // same as `None` (don't pass `--serialport ""` to the daemon).
+        let args = build_daemon_args(Mode::Usb, Some(""));
+        assert!(!args.iter().any(|a| a == "--serialport"));
     }
 
     #[test]

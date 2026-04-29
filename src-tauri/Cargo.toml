@@ -26,6 +26,14 @@ serde_json                     = "=1.0.140"
 # making it a direct dep adds no new build cost. `json` enables the
 # convenience `.json::<T>()` decoder used in `hf_auth.rs`.
 reqwest                        = { version = "=0.13.2", default-features = false, features = ["blocking", "json"] }
+# Cross-platform USB serial-port enumeration. We use it (read-only) to
+# detect Reachy Mini devices plugged via USB so the tray menu can list
+# them by name and let the user pick one. We never actually open the port
+# from the tray side - opening + speaking the protocol is the daemon's
+# job. The default features (libudev on Linux) are required to read VID
+# / PID metadata; without them `port_type` would always be `Unknown` and
+# we'd have no way to filter Reachy Minis from random USB-serial devices.
+serialport                     = "=4.9.0"
 
 [target.'cfg(unix)'.dependencies]
 # Used to send `killpg(2)` to the trampoline's process group when stopping
