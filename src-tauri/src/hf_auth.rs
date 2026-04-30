@@ -235,7 +235,7 @@ fn fetch_relay_status(client: &reqwest::blocking::Client) -> Result<RelayStatus,
 }
 
 /// Subset of `/api/hf-auth/central-robot-status` that we care about. The
-/// daemon proxies `cduss-reachy-mini-central.hf.space/api/robot-status`
+/// daemon proxies `tfrere-reachy-mini-central.hf.space/api/robot-status`
 /// using the stored HF token and returns the list of robots currently
 /// registered as producers under the user's account.
 ///
